@@ -341,6 +341,72 @@ def build_findings(
     return findings
 
 
+
+RISK_WEIGHTS = {
+    "IDENTITY_REPLY_TO_MISMATCH": 25,
+    "IDENTITY_RETURN_PATH_MISMATCH": 5,
+    "URL_DOMAIN_DIFFERS_FROM_SENDER": 18,
+    "SOCIAL_CREDENTIAL_REQUEST": 25,
+    "SOCIAL_ACCOUNT_VERIFICATION": 8,
+    "SOCIAL_URGENCY": 8,
+    "SOCIAL_RESTRICTION_THREAT": 8,
+    "ATTACHMENT_DANGEROUS_EXTENSION": 20,
+    "AUTH_SPF_FAIL": 4,
+    "AUTH_SPF_SOFTFAIL": 2,
+    "AUTH_DKIM_FAIL": 4,
+    "AUTH_DMARC_FAIL": 8,
+}
+
+
+def build_risk(findings: list[dict[str, Any]]) -> dict[str, Any]:
+    reasons: list[dict[str, Any]] = []
+    raw_score = 0
+
+    for finding in findings:
+        finding_id = finding.get("id", "")
+        weight = RISK_WEIGHTS.get(finding_id, 0)
+
+        if weight <= 0:
+            continue
+
+        raw_score += weight
+
+        reasons.append(
+            {
+                "finding": finding_id,
+                "weight": weight,
+                "reason": finding.get("title", finding_id),
+            }
+        )
+
+    score = min(raw_score, 100)
+
+    if score <= 24:
+        classification = "LOW"
+    elif score <= 49:
+        classification = "SUSPICIOUS"
+    elif score <= 74:
+        classification = "HIGH"
+    else:
+        classification = "CRITICAL"
+
+    weighted_findings = len(reasons)
+
+    if weighted_findings >= 3:
+        confidence = "HIGH"
+    elif weighted_findings >= 1:
+        confidence = "MEDIUM"
+    else:
+        confidence = "LOW"
+
+    return {
+        "score": score,
+        "classification": classification,
+        "confidence": confidence,
+        "reasons": reasons,
+        "scoring_version": "1.1",
+    }
+
 @app.post("/analyze")
 async def analyze_email(file: UploadFile = File(...)):
     filename = file.filename or "unknown.eml"
@@ -417,6 +483,8 @@ async def analyze_email(file: UploadFile = File(...)):
         build_social_engineering_findings(text_content)
     )
 
+    risk = build_risk(findings)
+
     result = {
         "filename": filename,
         "size_bytes": len(raw),
@@ -444,6 +512,7 @@ async def analyze_email(file: UploadFile = File(...)):
             "url_domains": url_domains,
         },
         "findings": findings,
+        "risk": risk,
         "security": {
             "active_html_executed": False,
             "attachments_executed": False,
@@ -453,4 +522,5 @@ async def analyze_email(file: UploadFile = File(...)):
     }
 
     return result
+
 

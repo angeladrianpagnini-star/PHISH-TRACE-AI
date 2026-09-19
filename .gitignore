@@ -1,0 +1,30 @@
+﻿# Environment
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/
+.next/
+out/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Secrets
+*.pem
+*.key

@@ -2,6 +2,7 @@
 
 import { ChangeEvent, useEffect, useState } from "react";
 import ThreatGraph from "../components/ThreatGraph";
+import RemediationActors from "../components/RemediationActors";
 
 type HealthResponse = {
   status: string;
@@ -684,6 +685,10 @@ export default function Home() {
                   </p>
                 </div>
               )}
+            <RemediationActors
+              classification={analysis.risk.classification}
+              correlationRelationship={correlation?.relationship}
+            />
             </div>
             <div
               style={{
@@ -865,6 +870,7 @@ export default function Home() {
     </main>
   );
 }
+
 
 
 

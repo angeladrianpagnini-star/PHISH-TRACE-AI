@@ -82,6 +82,9 @@ type CorrelationResult = {
     correlation_floor_applied: boolean;
   };
 };
+function displayLabel(value: string) {
+  return value.replaceAll("_", " ");
+}
 export default function Home() {
   const [apiStatus, setApiStatus] = useState("Checking...");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -619,7 +622,7 @@ export default function Home() {
                   <div style={{ marginTop: "22px", lineHeight: 1.8 }}>
                     <p>
                       <strong>Relationship:</strong>{" "}
-                      {correlation.relationship}
+                      {displayLabel(correlation.relationship)}
                     </p>
 
                     <p>
@@ -634,7 +637,7 @@ export default function Home() {
 
                     <p>
                       <strong>Attribution:</strong>{" "}
-                      {correlation.attribution}
+                      {displayLabel(correlation.attribution)}
                     </p>
                   </div>
 
@@ -852,6 +855,10 @@ export default function Home() {
     </main>
   );
 }
+
+
+
+
 
 
 

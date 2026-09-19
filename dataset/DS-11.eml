@@ -1,0 +1,16 @@
+﻿From: IT Service Desk <helpdesk@another-example.org>
+To: employee2@example.org
+Subject: Account access validation
+Reply-To: service@secure-access.example
+Return-Path: notify@secure-access.example
+Message-ID: <ds11-another-example@example.org>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+
+Your account requires verification.
+
+Confirm your account immediately through the access portal:
+
+https://login.secure-access.example/confirm
+
+Access may be suspended if verification is not completed today.

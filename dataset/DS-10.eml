@@ -1,0 +1,16 @@
+﻿From: Security Operations <alerts@company-example.com>
+To: employee1@example.com
+Subject: Security verification required
+Reply-To: support@secure-access.example
+Return-Path: bounce@secure-access.example
+Message-ID: <ds10-company-example@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+
+Urgent security verification is required.
+
+Please verify your account today using the following portal:
+
+https://login.secure-access.example/verify
+
+Failure to complete verification may result in account restriction.

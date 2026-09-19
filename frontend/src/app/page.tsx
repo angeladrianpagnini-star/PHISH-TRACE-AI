@@ -7,6 +7,17 @@ type HealthResponse = {
   service: string;
 };
 
+type IncidentResult = {
+  incident_id: string;
+  created_at: string;
+  status: string;
+  retention: {
+    mode: string;
+    persisted: boolean;
+  };
+  evidence: AnalysisResult;
+};
+
 type AnalysisResult = {
   filename: string;
   size_bytes: number;
@@ -60,7 +71,9 @@ export default function Home() {
   const [apiStatus, setApiStatus] = useState("Checking...");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
+  const [incident, setIncident] = useState<IncidentResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [creatingIncident, setCreatingIncident] = useState(false);
   const [error, setError] = useState("");
 
   const apiBase =
@@ -83,6 +96,7 @@ export default function Home() {
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     setError("");
     setAnalysis(null);
+    setIncident(null);
 
     const file = event.target.files?.[0] || null;
 
@@ -109,6 +123,7 @@ export default function Home() {
     setLoading(true);
     setError("");
     setAnalysis(null);
+    setIncident(null);
 
     try {
       const formData = new FormData();
@@ -133,6 +148,60 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function createIncident() {
+    if (!analysis) {
+      setError("Analyze an email before creating an incident.");
+      return;
+    }
+
+    setCreatingIncident(true);
+    setError("");
+
+    try {
+      const response = await fetch(`${apiBase}/incidents`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(analysis),
+      });
+
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.detail || "Incident creation failed.");
+      }
+
+      setIncident(payload);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Unexpected incident error."
+      );
+    } finally {
+      setCreatingIncident(false);
+    }
+  }
+
+  function exportIncidentJson() {
+    if (!incident) return;
+
+    const blob = new Blob([JSON.stringify(incident, null, 2)], {
+      type: "application/json",
+    });
+
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+
+    anchor.href = url;
+    anchor.download = `${incident.incident_id}.json`;
+
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+
+    URL.revokeObjectURL(url);
   }
 
   return (
@@ -323,6 +392,112 @@ export default function Home() {
               </p>
             </div>
 
+            <div
+              style={{
+                padding: "24px",
+                marginBottom: "28px",
+                border: "1px solid #22d3ee",
+                borderRadius: "14px",
+                background: "#0b1627",
+              }}
+            >
+              <p
+                style={{
+                  margin: 0,
+                  color: "#22d3ee",
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  letterSpacing: "0.12em",
+                }}
+              >
+                INCIDENT & EVIDENCE
+              </p>
+
+              {!incident ? (
+                <>
+                  <p
+                    style={{
+                      color: "#cbd5e1",
+                      lineHeight: 1.6,
+                      marginTop: "16px",
+                    }}
+                  >
+                    Preserve this analysis as an explicit incident record.
+                    Analysis alone does not retain evidence.
+                  </p>
+
+                  <button
+                    onClick={createIncident}
+                    disabled={creatingIncident}
+                    style={{
+                      marginTop: "8px",
+                      padding: "14px 24px",
+                      borderRadius: "8px",
+                      border: 0,
+                      fontWeight: 700,
+                      cursor: creatingIncident ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    {creatingIncident
+                      ? "CREATING INCIDENT..."
+                      : "CREATE INCIDENT"}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div style={{ marginTop: "18px", lineHeight: 1.8 }}>
+                    <p>
+                      <strong>Incident ID:</strong> {incident.incident_id}
+                    </p>
+
+                    <p>
+                      <strong>Status:</strong> {incident.status}
+                    </p>
+
+                    <p>
+                      <strong>Created:</strong>{" "}
+                      {new Date(incident.created_at).toLocaleString()}
+                    </p>
+
+                    <p>
+                      <strong>Retention:</strong>{" "}
+                      {incident.retention.mode.toUpperCase()}
+                    </p>
+
+                    <p>
+                      <strong>Server persistence:</strong>{" "}
+                      {incident.retention.persisted ? "YES" : "NO"}
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={exportIncidentJson}
+                    style={{
+                      marginTop: "10px",
+                      padding: "14px 24px",
+                      borderRadius: "8px",
+                      border: 0,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    EXPORT EVIDENCE JSON
+                  </button>
+
+                  <p
+                    style={{
+                      marginTop: "16px",
+                      color: "#94a3b8",
+                      fontSize: "13px",
+                    }}
+                  >
+                    Evidence export preserves the analyzed message SHA-256,
+                    findings, risk assessment and security controls.
+                  </p>
+                </>
+              )}
+            </div>
+
             <h3>Technical Evidence</h3>
 
             <p><strong>File:</strong> {analysis.filename}</p>
@@ -397,5 +572,10 @@ export default function Home() {
     </main>
   );
 }
+
+
+
+
+
 
 

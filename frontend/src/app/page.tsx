@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { ChangeEvent, useEffect, useState } from "react";
+import ThreatGraph from "../components/ThreatGraph";
 
 type HealthResponse = {
   status: string;
@@ -662,6 +663,15 @@ export default function Home() {
                     </>
                   )}
 
+                  {correlationBaseline && (
+                  <ThreatGraph
+                    baselineFilename={correlationBaseline.filename}
+                    currentFilename={analysis.filename}
+                    sharedIndicators={correlation.shared_indicators}
+                  />
+                  )}
+
+
                   <p
                     style={{
                       marginTop: "20px",
@@ -855,6 +865,9 @@ export default function Home() {
     </main>
   );
 }
+
+
+
 
 
 

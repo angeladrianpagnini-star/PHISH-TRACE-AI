@@ -366,6 +366,11 @@ def build_risk(findings: list[dict[str, Any]]) -> dict[str, Any]:
         finding_id = finding.get("id", "")
         weight = RISK_WEIGHTS.get(finding_id, 0)
 
+        if finding_id.startswith("AUTH_"):
+            evidence = finding.get("evidence", {})
+            if not evidence.get("verified", False):
+                continue
+
         if weight <= 0:
             continue
 
@@ -522,5 +527,6 @@ async def analyze_email(file: UploadFile = File(...)):
     }
 
     return result
+
 
 

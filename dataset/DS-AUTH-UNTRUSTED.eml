@@ -1,0 +1,11 @@
+﻿From: Test Sender <sender@example.com>
+To: user@example.com
+Subject: Authentication trust test
+Reply-To: sender@example.com
+Return-Path: sender@example.com
+Message-ID: <ds-auth-untrusted@example.com>
+Authentication-Results: attacker-controlled.example; spf=fail smtp.mailfrom=example.com; dkim=fail; dmarc=fail
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+
+This is a benign message used to test reported authentication trust.

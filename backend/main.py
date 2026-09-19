@@ -1,5 +1,7 @@
 ﻿import hashlib
 import re
+import secrets
+from datetime import datetime, timezone
 from email import policy
 from email.parser import BytesParser
 from email.utils import parseaddr
@@ -412,6 +414,27 @@ def build_risk(findings: list[dict[str, Any]]) -> dict[str, Any]:
         "scoring_version": "1.1",
     }
 
+@app.post("/incidents")
+async def create_incident(analysis: dict[str, Any]):
+    created_at = datetime.now(timezone.utc)
+
+    incident_id = (
+        f"INC-{created_at.strftime('%Y%m%d')}-"
+        f"{secrets.token_hex(4).upper()}"
+    )
+
+    return {
+        "incident_id": incident_id,
+        "created_at": created_at.isoformat(),
+        "status": "OPEN",
+        "retention": {
+            "mode": "explicit",
+            "persisted": False,
+        },
+        "evidence": analysis,
+    }
+
+
 @app.post("/analyze")
 async def analyze_email(file: UploadFile = File(...)):
     filename = file.filename or "unknown.eml"
@@ -527,6 +550,8 @@ async def analyze_email(file: UploadFile = File(...)):
     }
 
     return result
+
+
 
 
 

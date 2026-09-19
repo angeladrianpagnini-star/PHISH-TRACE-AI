@@ -414,6 +414,113 @@ def build_risk(findings: list[dict[str, Any]]) -> dict[str, Any]:
         "scoring_version": "1.1",
     }
 
+
+def correlate_analyses(
+    analysis_a: dict[str, Any],
+    analysis_b: dict[str, Any],
+) -> dict[str, Any]:
+    shared: list[dict[str, str]] = []
+
+    indicators_a = analysis_a.get("indicators", {})
+    indicators_b = analysis_b.get("indicators", {})
+
+    email_a = indicators_a.get("email_domains", {})
+    email_b = indicators_b.get("email_domains", {})
+
+    reply_to_a = email_a.get("reply_to", "")
+    reply_to_b = email_b.get("reply_to", "")
+
+    if reply_to_a and reply_to_a == reply_to_b:
+        shared.append(
+            {
+                "type": "reply_to_domain",
+                "value": reply_to_a,
+            }
+        )
+
+    return_path_a = email_a.get("return_path", "")
+    return_path_b = email_b.get("return_path", "")
+
+    if return_path_a and return_path_a == return_path_b:
+        shared.append(
+            {
+                "type": "return_path_domain",
+                "value": return_path_a,
+            }
+        )
+
+    url_domains_a = set(indicators_a.get("url_domains", []))
+    url_domains_b = set(indicators_b.get("url_domains", []))
+
+    for domain in sorted(url_domains_a & url_domains_b):
+        shared.append(
+            {
+                "type": "url_domain",
+                "value": domain,
+            }
+        )
+
+    shared_count = len(shared)
+
+    if shared_count >= 3:
+        relationship = "RELATED_CAMPAIGN"
+        confidence = "HIGH"
+    elif shared_count == 2:
+        relationship = "POSSIBLY_RELATED"
+        confidence = "MEDIUM"
+    elif shared_count == 1:
+        relationship = "WEAK_RELATIONSHIP"
+        confidence = "LOW"
+    else:
+        relationship = "NO_TECHNICAL_RELATIONSHIP"
+        confidence = "LOW"
+
+    correlated_risk = max(
+        analysis_a.get("risk", {}).get("score", 0),
+        analysis_b.get("risk", {}).get("score", 0),
+    )
+
+    correlation_floor_applied = False
+
+    if relationship == "RELATED_CAMPAIGN" and correlated_risk >= 50:
+        correlated_risk = max(correlated_risk, 75)
+        correlation_floor_applied = True
+
+    return {
+        "relationship": relationship,
+        "confidence": confidence,
+        "shared_indicators": shared,
+        "shared_indicator_count": shared_count,
+        "attribution": "NOT_DETERMINED",
+        "correlated_risk": {
+            "score": correlated_risk,
+            "classification": (
+                "CRITICAL"
+                if correlated_risk >= 75
+                else "HIGH"
+                if correlated_risk >= 50
+                else "SUSPICIOUS"
+                if correlated_risk >= 25
+                else "LOW"
+            ),
+            "correlation_floor_applied": correlation_floor_applied,
+        },
+    }
+
+
+@app.post("/correlate")
+async def correlate(payload: dict[str, Any]):
+    analysis_a = payload.get("analysis_a")
+    analysis_b = payload.get("analysis_b")
+
+    if not isinstance(analysis_a, dict) or not isinstance(analysis_b, dict):
+        raise HTTPException(
+            status_code=400,
+            detail="analysis_a and analysis_b are required.",
+        )
+
+    return correlate_analyses(analysis_a, analysis_b)
+
 @app.post("/incidents")
 async def create_incident(analysis: dict[str, Any]):
     created_at = datetime.now(timezone.utc)
@@ -550,6 +657,7 @@ async def analyze_email(file: UploadFile = File(...)):
     }
 
     return result
+
 
 
 

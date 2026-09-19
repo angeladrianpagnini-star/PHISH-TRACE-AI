@@ -71,3 +71,54 @@ H0 baseline.
 
 ### Current status
 P0 implementation complete pending final regression and MVP checkpoint.
+
+## 2026-09-19 - P1 production deployment
+
+### Campaign correlation
+- Deterministic correlation between analyzed emails implemented.
+- Shared Reply-To, Return-Path and URL domains are identified.
+- Correlation confidence and relationship classification exposed.
+- Correlation does not determine attacker identity or legal attribution.
+- Contextual risk escalation implemented for strongly related campaigns.
+
+### Threat visualization
+- Interactive threat graph implemented.
+- Baseline email, current email and shared technical indicators are visualized.
+- Visualization remains evidence-based and does not imply attribution.
+
+### Human-controlled remediation
+- Relevant operational actors are presented after analysis.
+- SOC / Security Operations: ACKNOWLEDGE.
+- Email / Identity Administrator: REMEDIATE.
+- Incident Response / Evidence Custodian: PRESERVE.
+- Actions are recommendations only and remain human-controlled.
+
+### Production deployment
+- Backend deployed to Railway.
+- Frontend deployed to Vercel.
+- Production CORS restricted to localhost development and the production Vercel origin.
+- Public backend health endpoint validated.
+- Public frontend-to-backend connectivity validated.
+
+### Production regression
+- DS-AUTH-UNTRUSTED: 0 / LOW / LOW.
+- DS-06: 67 / HIGH / HIGH.
+- DS-07: 100 / CRITICAL / HIGH.
+- Incident creation and JSON evidence export validated.
+- DS-10 / DS-11 correlation validated:
+  - Relationship: RELATED_CAMPAIGN.
+  - Confidence: HIGH.
+  - Shared technical indicators: 3.
+  - Standalone risk: 64 / HIGH.
+  - Contextual risk: 75 / CRITICAL.
+  - Attribution: NOT_DETERMINED.
+- Threat Graph rendered successfully in production.
+- Remediation Actors rendered successfully in production.
+- Security controls confirmed: no active HTML execution, no attachment execution, no automatic URL visits and no remote-content loading.
+
+### Production checkpoint
+- Commit: 9b81644
+- Tag: p1-production-green
+
+### Status
+P1 production deployment and regression validation complete.

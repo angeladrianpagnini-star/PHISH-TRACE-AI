@@ -23,3 +23,35 @@ Upload -> Analyze -> Explain -> Incident -> Evidence
 - Deterministic technical analysis remains independently visible
 - AI may assist analysis and explanation but does not determine attacker identity or legal responsibility
 - Analyze by default. Retain by choice.
+
+## Current production capabilities
+
+PHISH-TRACE AI currently provides:
+
+- Passive `.eml` analysis.
+- SHA-256 evidence integrity.
+- Deterministic identity, infrastructure, attachment and social-engineering findings.
+- Explainable risk scoring.
+- Explicit incident creation and JSON evidence export.
+- Deterministic campaign correlation.
+- Contextual risk assessment.
+- Interactive Threat Graph.
+- Human-controlled remediation guidance.
+
+## Production
+
+Frontend:
+https://phish-trace-ai-psi.vercel.app
+
+Backend:
+https://phish-trace-ai-production.up.railway.app
+
+Current validated checkpoint:
+
+`p1-production-green` — commit `9b81644`
+
+## Human control
+
+PHISH-TRACE AI supports analyst decision-making.
+
+It does not automatically execute remediation actions, determine attacker identity or establish legal attribution.

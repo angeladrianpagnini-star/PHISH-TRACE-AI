@@ -67,11 +67,31 @@ type AnalysisResult = {
   };
 };
 
+type CorrelationResult = {
+  relationship: string;
+  confidence: string;
+  shared_indicators: Array<{
+    type: string;
+    value: string;
+  }>;
+  shared_indicator_count: number;
+  attribution: string;
+  correlated_risk: {
+    score: number;
+    classification: string;
+    correlation_floor_applied: boolean;
+  };
+};
 export default function Home() {
   const [apiStatus, setApiStatus] = useState("Checking...");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [incident, setIncident] = useState<IncidentResult | null>(null);
+  const [correlationBaseline, setCorrelationBaseline] =
+    useState<AnalysisResult | null>(null);
+  const [correlation, setCorrelation] =
+    useState<CorrelationResult | null>(null);
+  const [correlating, setCorrelating] = useState(false);
   const [loading, setLoading] = useState(false);
   const [creatingIncident, setCreatingIncident] = useState(false);
   const [error, setError] = useState("");
@@ -97,6 +117,7 @@ export default function Home() {
     setError("");
     setAnalysis(null);
     setIncident(null);
+    setCorrelation(null);
 
     const file = event.target.files?.[0] || null;
 
@@ -150,6 +171,54 @@ export default function Home() {
     }
   }
 
+  function setAsCorrelationBaseline() {
+    if (!analysis) {
+      setError("Analyze an email before setting a correlation baseline.");
+      return;
+    }
+
+    setCorrelationBaseline(analysis);
+    setCorrelation(null);
+    setError("");
+  }
+
+  async function correlateWithBaseline() {
+    if (!analysis || !correlationBaseline) {
+      setError("A baseline analysis and a current analysis are required.");
+      return;
+    }
+
+    setCorrelating(true);
+    setCorrelation(null);
+    setError("");
+
+    try {
+      const response = await fetch(`${apiBase}/correlate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          analysis_a: correlationBaseline,
+          analysis_b: analysis,
+        }),
+      });
+
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.detail || "Correlation failed.");
+      }
+
+      setCorrelation(payload);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Unexpected correlation error."
+      );
+    } finally {
+      setCorrelating(false);
+    }
+  }
   async function createIncident() {
     if (!analysis) {
       setError("Analyze an email before creating an incident.");
@@ -396,6 +465,217 @@ export default function Home() {
               style={{
                 padding: "24px",
                 marginBottom: "28px",
+                border: "1px solid #a78bfa",
+                borderRadius: "14px",
+                background: "#0b1627",
+              }}
+            >
+              <p
+                style={{
+                  margin: 0,
+                  color: "#a78bfa",
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  letterSpacing: "0.12em",
+                }}
+              >
+                CAMPAIGN CORRELATION
+              </p>
+
+              <p
+                style={{
+                  color: "#cbd5e1",
+                  lineHeight: 1.6,
+                  marginTop: "16px",
+                }}
+              >
+                Compare technical indicators between two analyzed emails.
+                Correlation identifies shared evidence, not attacker identity.
+              </p>
+
+              {!correlationBaseline ? (
+                <button
+                  onClick={setAsCorrelationBaseline}
+                  style={{
+                    marginTop: "8px",
+                    padding: "14px 24px",
+                    borderRadius: "8px",
+                    border: 0,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  SET AS BASELINE
+                </button>
+              ) : (
+                <>
+                  <p style={{ marginTop: "18px", color: "#cbd5e1" }}>
+                    <strong>Baseline:</strong>{" "}
+                    {correlationBaseline.filename}
+                  </p>
+
+                  <p
+                    style={{
+                      color: "#94a3b8",
+                      fontSize: "13px",
+                      overflowWrap: "anywhere",
+                    }}
+                  >
+                    SHA-256: {correlationBaseline.sha256}
+                  </p>
+
+                  {analysis.sha256 !== correlationBaseline.sha256 ? (
+                    <button
+                      onClick={correlateWithBaseline}
+                      disabled={correlating}
+                      style={{
+                        marginTop: "8px",
+                        padding: "14px 24px",
+                        borderRadius: "8px",
+                        border: 0,
+                        fontWeight: 700,
+                        cursor: correlating ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      {correlating
+                        ? "CORRELATING..."
+                        : "CORRELATE WITH BASELINE"}
+                    </button>
+                  ) : (
+                    <p style={{ color: "#94a3b8" }}>
+                      Select and analyze another .eml file to compare it with
+                      this baseline.
+                    </p>
+                  )}
+                </>
+              )}
+
+              {correlation && (
+                <div
+                  style={{
+                    marginTop: "24px",
+                    paddingTop: "22px",
+                    borderTop: "1px solid #334155",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "28px",
+                      flexWrap: "wrap",
+                      alignItems: "baseline",
+                    }}
+                  >
+                    <div>
+                      <p
+                        style={{
+                          margin: 0,
+                          color: "#94a3b8",
+                          fontSize: "12px",
+                        }}
+                      >
+                        STANDALONE RISK
+                      </p>
+
+                      <strong style={{ fontSize: "28px" }}>
+                        {analysis.risk.score}{" "}
+                        {analysis.risk.classification}
+                      </strong>
+                    </div>
+
+                    <div>
+                      <p
+                        style={{
+                          margin: 0,
+                          color: "#94a3b8",
+                          fontSize: "12px",
+                        }}
+                      >
+                        CONTEXTUAL RISK
+                      </p>
+
+                      <strong
+                        style={{
+                          fontSize: "28px",
+                          color:
+                            correlation.correlated_risk.classification ===
+                            "CRITICAL"
+                              ? "#f87171"
+                              : correlation.correlated_risk.classification ===
+                                "HIGH"
+                              ? "#fb923c"
+                              : correlation.correlated_risk.classification ===
+                                "SUSPICIOUS"
+                              ? "#facc15"
+                              : "#4ade80",
+                        }}
+                      >
+                        {correlation.correlated_risk.score}{" "}
+                        {correlation.correlated_risk.classification}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: "22px", lineHeight: 1.8 }}>
+                    <p>
+                      <strong>Relationship:</strong>{" "}
+                      {correlation.relationship}
+                    </p>
+
+                    <p>
+                      <strong>Correlation confidence:</strong>{" "}
+                      {correlation.confidence}
+                    </p>
+
+                    <p>
+                      <strong>Shared technical indicators:</strong>{" "}
+                      {correlation.shared_indicator_count}
+                    </p>
+
+                    <p>
+                      <strong>Attribution:</strong>{" "}
+                      {correlation.attribution}
+                    </p>
+                  </div>
+
+                  {correlation.shared_indicators.length > 0 && (
+                    <>
+                      <h4 style={{ marginTop: "22px" }}>
+                        Shared Evidence
+                      </h4>
+
+                      <ul style={{ lineHeight: 1.8 }}>
+                        {correlation.shared_indicators.map(
+                          (indicator, index) => (
+                            <li
+                              key={`${indicator.type}-${indicator.value}-${index}`}
+                            >
+                              <strong>{indicator.type}</strong>:{" "}
+                              {indicator.value}
+                            </li>
+                          )
+                        )}
+                      </ul>
+                    </>
+                  )}
+
+                  <p
+                    style={{
+                      marginTop: "20px",
+                      color: "#94a3b8",
+                      fontSize: "13px",
+                    }}
+                  >
+                    Technical correlation does not establish attacker identity
+                    or legal attribution.
+                  </p>
+                </div>
+              )}
+            </div>
+            <div
+              style={{
+                padding: "24px",
+                marginBottom: "28px",
                 border: "1px solid #22d3ee",
                 borderRadius: "14px",
                 background: "#0b1627",
@@ -572,6 +852,11 @@ export default function Home() {
     </main>
   );
 }
+
+
+
+
+
 
 
 

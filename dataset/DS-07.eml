@@ -1,0 +1,28 @@
+﻿From: Security Operations <alerts@example.com>
+To: user@example.com
+Subject: URGENT - Verify your account immediately
+Reply-To: support@evil.example
+Return-Path: bounce@evil.example
+Message-ID: <ds07@example.com>
+Authentication-Results: mx.example; spf=pass smtp.mailfrom=example.com; dkim=pass; dmarc=pass
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="DS07BOUNDARY"
+
+--DS07BOUNDARY
+Content-Type: text/plain; charset="utf-8"
+
+URGENT: your account will be restricted unless you verify it immediately.
+
+Confirm your username and password at:
+
+https://credential-check.evil.example/login
+
+Failure to verify today may result in temporary account suspension.
+
+--DS07BOUNDARY
+Content-Type: application/octet-stream; name="security_update.exe"
+Content-Disposition: attachment; filename="security_update.exe"
+Content-Transfer-Encoding: base64
+
+VEhJUyBJUyBOT1QgQU4gRVhFQ1VUQUJMRQ==
+--DS07BOUNDARY--

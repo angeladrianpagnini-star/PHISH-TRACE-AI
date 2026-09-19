@@ -1,0 +1,17 @@
+﻿From: Account Security <security@example.com>
+To: user@example.com
+Subject: Urgent account verification required
+Reply-To: security@example.com
+Return-Path: bounce@example.com
+Message-ID: <ds06@example.com>
+Authentication-Results: mx.example; spf=pass smtp.mailfrom=example.com; dkim=pass; dmarc=pass
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+
+Urgent: your account will be restricted unless you verify it immediately.
+
+To keep access to your account, confirm your username and password using the secure verification page below:
+
+https://verify-account.example/login
+
+Failure to verify today may result in temporary account suspension.

@@ -119,6 +119,110 @@ def parse_reported_authentication(value: str) -> dict[str, str]:
     return results
 
 
+
+def extract_text_content(message) -> str:
+    chunks: list[str] = []
+
+    for part in message.walk():
+        if part.get_content_type() not in {"text/plain", "text/html"}:
+            continue
+
+        try:
+            payload = part.get_content()
+        except Exception:
+            continue
+
+        if isinstance(payload, str):
+            chunks.append(payload)
+
+    return "\n".join(chunks).lower()
+
+
+def build_social_engineering_findings(text: str) -> list[dict[str, Any]]:
+    findings: list[dict[str, Any]] = []
+
+    credential_terms = (
+        "username and password",
+        "password",
+        "login credentials",
+        "credentials",
+    )
+
+    verification_terms = (
+        "verify your account",
+        "account verification",
+        "confirm your account",
+        "verify it immediately",
+    )
+
+    urgency_terms = (
+        "urgent",
+        "immediately",
+        "today",
+        "as soon as possible",
+    )
+
+    restriction_terms = (
+        "account will be restricted",
+        "account suspension",
+        "access will be suspended",
+        "temporary account suspension",
+    )
+
+    if any(term in text for term in credential_terms):
+        findings.append(
+            {
+                "id": "SOCIAL_CREDENTIAL_REQUEST",
+                "category": "social_engineering",
+                "severity": "high",
+                "title": "Message requests account credentials",
+                "evidence": {
+                    "detected": True,
+                },
+            }
+        )
+
+    if any(term in text for term in verification_terms):
+        findings.append(
+            {
+                "id": "SOCIAL_ACCOUNT_VERIFICATION",
+                "category": "social_engineering",
+                "severity": "medium",
+                "title": "Message requests account verification",
+                "evidence": {
+                    "detected": True,
+                },
+            }
+        )
+
+    if any(term in text for term in urgency_terms):
+        findings.append(
+            {
+                "id": "SOCIAL_URGENCY",
+                "category": "social_engineering",
+                "severity": "medium",
+                "title": "Urgency language detected",
+                "evidence": {
+                    "detected": True,
+                },
+            }
+        )
+
+    if any(term in text for term in restriction_terms):
+        findings.append(
+            {
+                "id": "SOCIAL_RESTRICTION_THREAT",
+                "category": "social_engineering",
+                "severity": "medium",
+                "title": "Threat of account restriction or suspension detected",
+                "evidence": {
+                    "detected": True,
+                },
+            }
+        )
+
+    return findings
+
 def build_findings(
     from_domain: str,
     reply_to_domain: str,
@@ -284,6 +388,7 @@ async def analyze_email(file: UploadFile = File(...)):
 
     urls = extract_urls(message)
     attachments = extract_attachments(message)
+    text_content = extract_text_content(message)
 
     from_domain = extract_email_domain(from_value)
     reply_to_domain = extract_email_domain(reply_to_value)
@@ -306,6 +411,10 @@ async def analyze_email(file: UploadFile = File(...)):
         url_domains=url_domains,
         reported_auth=reported_auth,
         attachments=attachments,
+    )
+
+    findings.extend(
+        build_social_engineering_findings(text_content)
     )
 
     result = {
@@ -344,3 +453,4 @@ async def analyze_email(file: UploadFile = File(...)):
     }
 
     return result
+

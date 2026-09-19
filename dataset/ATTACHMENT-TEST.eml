@@ -1,0 +1,18 @@
+﻿From: Test <test@example.com>
+To: user@example.com
+Subject: Attachment test
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="BOUNDARY"
+
+--BOUNDARY
+Content-Type: text/plain; charset="utf-8"
+
+Attachment test.
+
+--BOUNDARY
+Content-Type: text/plain; name="note.txt"
+Content-Disposition: attachment; filename="note.txt"
+Content-Transfer-Encoding: base64
+
+SGVsbG8gVExO
+--BOUNDARY--

@@ -1,0 +1,14 @@
+﻿From: Test <test@example.com>
+To: user@example.com
+Subject: HTML inert test
+MIME-Version: 1.0
+Content-Type: text/html; charset="utf-8"
+
+<html>
+  <body>
+    <h1>Test</h1>
+    <script>alert("x")</script>
+    <img src="https://remote.example/image.png">
+    <a href="https://example.example/login">Login</a>
+  </body>
+</html>

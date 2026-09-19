@@ -30,6 +30,24 @@ type AnalysisResult = {
     sha256: string;
     executed: boolean;
   }>;
+  findings: Array<{
+    id: string;
+    category: string;
+    severity: string;
+    title: string;
+    evidence: Record<string, unknown>;
+  }>;
+  risk: {
+    score: number;
+    classification: string;
+    confidence: string;
+    reasons: Array<{
+      finding: string;
+      weight: number;
+      reason: string;
+    }>;
+    scoring_version: string;
+  };
   security: {
     active_html_executed: boolean;
     attachments_executed: boolean;
@@ -211,6 +229,100 @@ export default function Home() {
               background: "#0f1c2e",
             }}
           >
+            <div
+              style={{
+                padding: "24px",
+                marginBottom: "28px",
+                border: "1px solid #475569",
+                borderRadius: "14px",
+                background: "#0b1627",
+              }}
+            >
+              <p
+                style={{
+                  margin: 0,
+                  color: "#94a3b8",
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  letterSpacing: "0.12em",
+                }}
+              >
+                RISK ASSESSMENT
+              </p>
+
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "baseline",
+                  gap: "18px",
+                  flexWrap: "wrap",
+                  marginTop: "12px",
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: "52px",
+                    fontWeight: 800,
+                  }}
+                >
+                  {analysis.risk.score}
+                </span>
+
+                <span style={{ color: "#94a3b8" }}>/ 100</span>
+
+                <strong
+                  style={{
+                    fontSize: "24px",
+                    color:
+                      analysis.risk.classification === "CRITICAL"
+                        ? "#f87171"
+                        : analysis.risk.classification === "HIGH"
+                        ? "#fb923c"
+                        : analysis.risk.classification === "SUSPICIOUS"
+                        ? "#facc15"
+                        : "#4ade80",
+                  }}
+                >
+                  {analysis.risk.classification}
+                </strong>
+              </div>
+
+              <p>
+                <strong>Confidence:</strong> {analysis.risk.confidence}
+              </p>
+
+              <p>
+                <strong>Scoring model:</strong> v{analysis.risk.scoring_version}
+              </p>
+
+              <h4 style={{ marginTop: "22px" }}>Why this score?</h4>
+
+              {analysis.risk.reasons.length > 0 ? (
+                <ul style={{ lineHeight: 1.8 }}>
+                  {analysis.risk.reasons.map((item) => (
+                    <li key={item.finding}>
+                      <strong>+{item.weight}</strong> — {item.reason}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p style={{ color: "#94a3b8" }}>
+                  No weighted risk indicators detected.
+                </p>
+              )}
+
+              <p
+                style={{
+                  marginTop: "20px",
+                  color: "#94a3b8",
+                  fontSize: "13px",
+                }}
+              >
+                Deterministic analysis. Authentication PASS does not imply
+                message safety.
+              </p>
+            </div>
+
             <h3>Technical Evidence</h3>
 
             <p><strong>File:</strong> {analysis.filename}</p>
@@ -285,3 +397,5 @@ export default function Home() {
     </main>
   );
 }
+
+

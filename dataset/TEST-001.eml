@@ -1,0 +1,14 @@
+﻿From: Security Team <security@example.com>
+To: user@example.com
+Subject: PHISH-TRACE Test Message
+Reply-To: support@example.net
+Return-Path: bounce@example.net
+Message-ID: <test-001@example.com>
+Authentication-Results: mx.example; spf=pass smtp.mailfrom=example.com; dkim=pass; dmarc=pass
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+
+This is a synthetic TLN test message.
+
+Review:
+https://portal.example/login

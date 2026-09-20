@@ -15,6 +15,58 @@ from fastapi.middleware.cors import CORSMiddleware
 MAX_EML_SIZE = 10 * 1024 * 1024
 URL_PATTERN = re.compile(r"https?://[^\s<>'\"]+", re.IGNORECASE)
 
+SHORTENER_DOMAINS = {
+    "abre.ai",
+    "bit.ly",
+    "buff.ly",
+    "cutt.ly",
+    "goo.gl",
+    "is.gd",
+    "ow.ly",
+    "rb.gy",
+    "rebrand.ly",
+    "shorturl.at",
+    "t.co",
+    "tinyurl.com",
+}
+
+FREE_WEBMAIL_DOMAINS = {
+    "gmail.com",
+    "hotmail.com",
+    "outlook.com",
+    "live.com",
+    "yahoo.com",
+    "icloud.com",
+    "proton.me",
+    "protonmail.com",
+}
+
+LEGAL_PRETEXT_TERMS = (
+    "juzgado",
+    "tribunal",
+    "camara de apelaciones",
+    "expediente",
+    "demanda",
+    "proceso judicial",
+    "notificacion judicial",
+    "notificacion electronica",
+    "plazo procesal",
+    "proveido",
+    "court notice",
+    "legal proceeding",
+)
+
+INSTITUTIONAL_CLAIM_TERMS = (
+    "juzgado",
+    "tribunal",
+    "camara de apelaciones",
+    "poder judicial",
+    "sistema de administracion de justicia",
+    "jurisdiccion federal",
+    "comunicado oficial",
+    "official court notice",
+)
+
 app = FastAPI(
     title="PHISH-TRACE AI API",
     version="0.3.0"
@@ -258,6 +310,134 @@ def build_social_engineering_findings(text: str) -> list[dict[str, Any]]:
 
     return findings
 
+
+def build_contextual_findings(
+    message,
+    from_domain: str,
+    url_domains: list[str],
+    subject: str,
+    text_content: str,
+) -> list[dict[str, Any]]:
+    findings: list[dict[str, Any]] = []
+
+    combined_text = normalize_text(
+        f"{subject}\n{text_content}"
+    )
+
+    shortener_domains = sorted(
+        domain
+        for domain in url_domains
+        if domain in SHORTENER_DOMAINS
+    )
+
+    if shortener_domains:
+        findings.append(
+            {
+                "id": "URL_SHORTENER_PRESENT",
+                "category": "infrastructure",
+                "severity": "medium",
+                "title": "URL shortener detected",
+                "evidence": {
+                    "domains": shortener_domains,
+                    "urls_visited": False,
+                },
+            }
+        )
+
+    legal_terms_found = sorted(
+        {
+            term
+            for term in LEGAL_PRETEXT_TERMS
+            if term in combined_text
+        }
+    )
+
+    if legal_terms_found:
+        findings.append(
+            {
+                "id": "SOCIAL_LEGAL_PRETEXT",
+                "category": "social_engineering",
+                "severity": "medium",
+                "title": "Legal or judicial pretext detected",
+                "evidence": {
+                    "matched_terms": legal_terms_found,
+                },
+            }
+        )
+
+    if shortener_domains and legal_terms_found:
+        findings.append(
+            {
+                "id": "URL_SHORTENER_WITH_LEGAL_PRETEXT",
+                "category": "social_engineering",
+                "severity": "high",
+                "title": "URL shortener used inside a legal or judicial pretext",
+                "evidence": {
+                    "domains": shortener_domains,
+                    "matched_terms": legal_terms_found,
+                    "urls_visited": False,
+                },
+            }
+        )
+
+    institutional_terms_found = sorted(
+        {
+            term
+            for term in INSTITUTIONAL_CLAIM_TERMS
+            if term in combined_text
+        }
+    )
+
+    if (
+        from_domain in FREE_WEBMAIL_DOMAINS
+        and institutional_terms_found
+    ):
+        findings.append(
+            {
+                "id": "INSTITUTIONAL_CLAIM_FREE_WEBMAIL",
+                "category": "identity",
+                "severity": "high",
+                "title": "Institutional claim sent from a public webmail domain",
+                "evidence": {
+                    "from_domain": from_domain,
+                    "matched_terms": institutional_terms_found,
+                },
+            }
+        )
+
+    scl_raw = str(
+        message.get("X-MS-Exchange-Organization-SCL", "")
+    ).strip()
+
+    mailbox_delivery = str(
+        message.get("X-Microsoft-Antispam-Mailbox-Delivery", "")
+    )
+
+    try:
+        scl = int(scl_raw)
+    except (TypeError, ValueError):
+        scl = None
+
+    junk_by_scl = scl is not None and scl >= 5
+    junk_by_delivery = "rf:junkemail" in mailbox_delivery.lower()
+
+    if junk_by_scl or junk_by_delivery:
+        findings.append(
+            {
+                "id": "PROVIDER_JUNK_VERDICT",
+                "category": "provider_signal",
+                "severity": "medium",
+                "title": "Mail provider classified the message as junk",
+                "evidence": {
+                    "scl": scl,
+                    "junk_email_flag": junk_by_delivery,
+                },
+            }
+        )
+
+    return findings
+
+
 def build_findings(
     from_domain: str,
     reply_to_domain: str,
@@ -381,6 +561,10 @@ RISK_WEIGHTS = {
     "IDENTITY_REPLY_TO_MISMATCH": 25,
     "IDENTITY_RETURN_PATH_MISMATCH": 5,
     "URL_DOMAIN_DIFFERS_FROM_SENDER": 18,
+    "URL_SHORTENER_PRESENT": 0,
+    "URL_SHORTENER_WITH_LEGAL_PRETEXT": 12,
+    "INSTITUTIONAL_CLAIM_FREE_WEBMAIL": 25,
+    "PROVIDER_JUNK_VERDICT": 8,
     "SOCIAL_CREDENTIAL_REQUEST": 25,
     "SOCIAL_ACCOUNT_VERIFICATION": 8,
     "SOCIAL_URGENCY": 8,
@@ -444,7 +628,7 @@ def build_risk(findings: list[dict[str, Any]]) -> dict[str, Any]:
         "classification": classification,
         "confidence": confidence,
         "reasons": reasons,
-        "scoring_version": "1.1",
+        "scoring_version": "1.2",
     }
 
 
@@ -649,6 +833,16 @@ async def analyze_email(file: UploadFile = File(...)):
 
     findings.extend(
         build_social_engineering_findings(text_content)
+    )
+
+    findings.extend(
+        build_contextual_findings(
+            message=message,
+            from_domain=from_domain,
+            url_domains=url_domains,
+            subject=str(message.get("subject", "")),
+            text_content=text_content,
+        )
     )
 
     risk = build_risk(findings)

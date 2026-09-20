@@ -1,6 +1,7 @@
 ﻿import hashlib
 import re
 import secrets
+import unicodedata
 from datetime import datetime, timezone
 from email import policy
 from email.parser import BytesParser
@@ -124,6 +125,14 @@ def parse_reported_authentication(value: str) -> dict[str, str]:
     return results
 
 
+def normalize_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value)
+    return "".join(
+        char
+        for char in normalized
+        if not unicodedata.combining(char)
+    ).lower()
+
 
 def extract_text_content(message) -> str:
     chunks: list[str] = []
@@ -140,7 +149,7 @@ def extract_text_content(message) -> str:
         if isinstance(payload, str):
             chunks.append(payload)
 
-    return "\n".join(chunks).lower()
+    return normalize_text("\n".join(chunks))
 
 
 def build_social_engineering_findings(text: str) -> list[dict[str, Any]]:
@@ -151,6 +160,10 @@ def build_social_engineering_findings(text: str) -> list[dict[str, Any]]:
         "password",
         "login credentials",
         "credentials",
+        "usuario y contrasena",
+        "nombre de usuario y contrasena",
+        "contrasena",
+        "credenciales",
     )
 
     verification_terms = (
@@ -158,6 +171,13 @@ def build_social_engineering_findings(text: str) -> list[dict[str, Any]]:
         "account verification",
         "confirm your account",
         "verify it immediately",
+        "verifica tu cuenta",
+        "verificar tu cuenta",
+        "confirma tu cuenta",
+        "confirmar tu cuenta",
+        "valida tu cuenta",
+        "validar tu cuenta",
+        "validacion de cuenta",
     )
 
     urgency_terms = (
@@ -165,6 +185,9 @@ def build_social_engineering_findings(text: str) -> list[dict[str, Any]]:
         "immediately",
         "today",
         "as soon as possible",
+        "urgente",
+        "inmediatamente",
+        "de inmediato",
     )
 
     restriction_terms = (
@@ -172,6 +195,13 @@ def build_social_engineering_findings(text: str) -> list[dict[str, Any]]:
         "account suspension",
         "access will be suspended",
         "temporary account suspension",
+        "cuenta sera restringida",
+        "cuenta restringida",
+        "cuenta suspendida",
+        "suspension de cuenta",
+        "acceso sera suspendido",
+        "acceso suspendido",
+        "acceso bloqueado",
     )
 
     if any(term in text for term in credential_terms):

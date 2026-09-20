@@ -102,7 +102,7 @@ export default function Home() {
   const [error, setError] = useState("");
 
   const apiBase =
-    "https://phish-trace-ai-v1-2-preview-production.up.railway.app";
+    "https://phish-trace-ai-v1-2-backend-production.up.railway.app";
 
   useEffect(() => {
     fetch(`${apiBase}/health`)

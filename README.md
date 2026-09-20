@@ -50,6 +50,18 @@ Current validated checkpoint:
 
 `p1-production-green` — commit `9b81644`
 
+## Post-submission development
+
+The TLN submission remains preserved on `main` with scoring v1.1.
+
+A separate branch, `post-submission-judicial-hardening`, contains scoring v1.2 developed after the submission deadline from a real-world judicial-phishing validation case.
+
+Preview v1.2:
+https://phish-trace-ai-git-post-submission-judic-51097e-phish-trace-lab.vercel.app
+
+Detailed validation record:
+`docs/POST_SUBMISSION_JUDICIAL_VALIDATION.md`
+
 ## Human control
 
 PHISH-TRACE AI supports analyst decision-making.

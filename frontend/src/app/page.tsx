@@ -102,7 +102,7 @@ export default function Home() {
   const [error, setError] = useState("");
 
   const apiBase =
-    process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
+    "https://phish-trace-ai-v1-2-backend-production.up.railway.app";
 
   useEffect(() => {
     fetch(`${apiBase}/health`)
@@ -296,7 +296,7 @@ export default function Home() {
             letterSpacing: "0.16em",
           }}
         >
-          TLN CYBERSECURITY CHALLENGE 2026
+          POST-SUBMISSION PREVIEW · SCORING v1.2
         </p>
 
         <h1 style={{ fontSize: "60px", margin: "18px 0 8px" }}>

@@ -122,3 +122,38 @@ P0 implementation complete pending final regression and MVP checkpoint.
 
 ### Status
 P1 production deployment and regression validation complete.
+
+
+## 2026-09-20 - Post-submission real-world hardening
+
+### Real-world validation trigger
+- A real unsolicited message using a judicial/labor-court pretext was analyzed after the TLN submission had closed.
+- Submitted scoring v1.1 classified the message as 18 / LOW / MEDIUM.
+- The gap was traced to missing contextual signals rather than MIME parsing, hashing or evidence-preservation failures.
+
+### Scoring v1.2
+- URL shortener detection added as an informational signal.
+- Legal/judicial pretext detection added as an informational signal.
+- Composite shortener + legal-pretext rule added.
+- Institutional claim from public webmail detection added.
+- Provider Junk verdict detection added.
+- Generic URL shorteners remain weight 0 in isolation to reduce false positives.
+
+### Validation
+- Judicial real-world case: 63 / HIGH / HIGH / v1.2.
+- Promotional shortener control: 18 / LOW / MEDIUM / v1.2.
+- Full regression preserved all expected dataset results.
+- DS-10 / DS-11 correlation remained RELATED_CAMPAIGN / HIGH with 3 shared indicators, contextual risk 75 / CRITICAL and attribution NOT_DETERMINED.
+
+### Isolation
+- Submitted TLN version remains on `main` at commit `2b5f7ec`.
+- Post-submission work remains on `post-submission-judicial-hardening`.
+- Validated hardening checkpoint: `74a2bb5`.
+- Tag: `post-submission-judicial-hardening-green`.
+- Separate Railway backend and Vercel preview validated end-to-end.
+
+### Documentation
+- Detailed case record: `docs/POST_SUBMISSION_JUDICIAL_VALIDATION.md`.
+
+### Status
+Post-submission scoring v1.2 validated in an isolated deployment.

@@ -418,3 +418,159 @@ def test_ds07_high_signal_phishing_case():
         "HIGH",
         "CRITICAL",
     }
+
+def test_ds10_ds11_shared_infrastructure_correlation():
+    import asyncio
+    from io import BytesIO
+
+    from fastapi import UploadFile
+    from main import analyze_email, correlate_analyses
+
+    async def analyze(path, filename):
+        raw = open(path, "rb").read()
+
+        upload = UploadFile(
+            filename=filename,
+            file=BytesIO(raw),
+        )
+
+        return await analyze_email(upload)
+
+    analysis_a = asyncio.run(
+        analyze("../dataset/DS-10.eml", "DS-10.eml")
+    )
+
+    analysis_b = asyncio.run(
+        analyze("../dataset/DS-11.eml", "DS-11.eml")
+    )
+
+    correlation = correlate_analyses(
+        analysis_a,
+        analysis_b,
+    )
+
+    shared = {
+        (item["type"], item["value"])
+        for item in correlation["shared_indicators"]
+    }
+
+    assert (
+        "reply_to_domain",
+        "secure-access.example",
+    ) in shared
+
+    assert (
+        "return_path_domain",
+        "secure-access.example",
+    ) in shared
+
+    assert (
+        "url_domain",
+        "login.secure-access.example",
+    ) in shared
+
+    assert correlation["shared_indicator_count"] == 3
+    assert correlation["relationship"] == "RELATED_CAMPAIGN"
+    assert correlation["confidence"] == "HIGH"
+    assert correlation["attribution"] == "NOT_DETERMINED"
+
+    assert correlation["correlated_risk"]["score"] == 75
+    assert correlation["correlated_risk"]["classification"] == "CRITICAL"
+    assert (
+        correlation["correlated_risk"]["correlation_floor_applied"]
+        is True
+    )
+
+
+def test_correlation_does_not_claim_attribution():
+    from main import correlate_analyses
+
+    analysis_a = {
+        "indicators": {
+            "email_domains": {
+                "reply_to": "shared.example",
+                "return_path": "shared.example",
+            },
+            "url_domains": [
+                "login.shared.example",
+            ],
+        },
+        "risk": {
+            "score": 60,
+        },
+    }
+
+    analysis_b = {
+        "indicators": {
+            "email_domains": {
+                "reply_to": "shared.example",
+                "return_path": "shared.example",
+            },
+            "url_domains": [
+                "login.shared.example",
+            ],
+        },
+        "risk": {
+            "score": 60,
+        },
+    }
+
+    correlation = correlate_analyses(
+        analysis_a,
+        analysis_b,
+    )
+
+    assert correlation["relationship"] == "RELATED_CAMPAIGN"
+    assert correlation["attribution"] == "NOT_DETERMINED"
+
+
+def test_no_shared_infrastructure_returns_no_relationship():
+    from main import correlate_analyses
+
+    analysis_a = {
+        "indicators": {
+            "email_domains": {
+                "reply_to": "alpha.example",
+                "return_path": "alpha.example",
+            },
+            "url_domains": [
+                "login.alpha.example",
+            ],
+        },
+        "risk": {
+            "score": 10,
+        },
+    }
+
+    analysis_b = {
+        "indicators": {
+            "email_domains": {
+                "reply_to": "beta.example",
+                "return_path": "beta.example",
+            },
+            "url_domains": [
+                "login.beta.example",
+            ],
+        },
+        "risk": {
+            "score": 10,
+        },
+    }
+
+    correlation = correlate_analyses(
+        analysis_a,
+        analysis_b,
+    )
+
+    assert correlation["shared_indicator_count"] == 0
+    assert (
+        correlation["relationship"]
+        == "NO_TECHNICAL_RELATIONSHIP"
+    )
+    assert correlation["confidence"] == "LOW"
+    assert correlation["attribution"] == "NOT_DETERMINED"
+    assert correlation["correlated_risk"]["score"] == 10
+    assert (
+        correlation["correlated_risk"]["correlation_floor_applied"]
+        is False
+    )

@@ -226,10 +226,16 @@ def build_social_engineering_findings(text: str) -> list[dict[str, Any]]:
         "verify it immediately",
         "verifica tu cuenta",
         "verificar tu cuenta",
+        "verifique su cuenta",
+        "verificar su cuenta",
         "confirma tu cuenta",
         "confirmar tu cuenta",
+        "confirme su cuenta",
+        "confirmar su cuenta",
         "valida tu cuenta",
         "validar tu cuenta",
+        "valide su cuenta",
+        "validar su cuenta",
         "validacion de cuenta",
     )
 
@@ -885,9 +891,3 @@ async def analyze_email(file: UploadFile = File(...)):
     }
 
     return result
-
-
-
-
-
-

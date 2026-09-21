@@ -743,3 +743,135 @@ def test_build_campaign_does_not_create_false_campaign():
     assert campaign["attribution"] == "NOT_DETERMINED"
     assert campaign["aggregate_risk"]["score"] == 15
     assert campaign["aggregate_risk"]["classification"] == "LOW"
+
+def test_correlate_campaign_endpoint_returns_campaign():
+    import asyncio
+
+    from main import correlate_campaign
+
+    analyses = [
+        {
+            "filename": "CORP-A.eml",
+            "indicators": {
+                "email_domains": {
+                    "reply_to": "shared.example",
+                    "return_path": "shared.example",
+                },
+                "url_domains": [
+                    "login.shared.example",
+                ],
+            },
+            "risk": {
+                "score": 60,
+            },
+        },
+        {
+            "filename": "CORP-B.eml",
+            "indicators": {
+                "email_domains": {
+                    "reply_to": "shared.example",
+                    "return_path": "shared.example",
+                },
+                "url_domains": [
+                    "login.shared.example",
+                ],
+            },
+            "risk": {
+                "score": 55,
+            },
+        },
+        {
+            "filename": "UNRELATED.eml",
+            "indicators": {
+                "email_domains": {
+                    "reply_to": "other.example",
+                    "return_path": "other.example",
+                },
+                "url_domains": [
+                    "login.other.example",
+                ],
+            },
+            "risk": {
+                "score": 20,
+            },
+        },
+    ]
+
+    result = asyncio.run(
+        correlate_campaign(
+            {
+                "analyses": analyses,
+            }
+        )
+    )
+
+    assert result["analysis_count"] == 3
+    assert result["related_message_count"] == 2
+    assert result["relationship"] == "RELATED_CAMPAIGN"
+    assert result["confidence"] == "HIGH"
+    assert result["attribution"] == "NOT_DETERMINED"
+
+    assert set(result["related_filenames"]) == {
+        "CORP-A.eml",
+        "CORP-B.eml",
+    }
+
+    assert result["aggregate_risk"]["score"] == 75
+    assert result["aggregate_risk"]["classification"] == "CRITICAL"
+
+
+def test_correlate_campaign_endpoint_rejects_less_than_two():
+    import asyncio
+
+    import pytest
+    from fastapi import HTTPException
+
+    from main import correlate_campaign
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(
+            correlate_campaign(
+                {
+                    "analyses": [
+                        {
+                            "filename": "ONLY.eml",
+                            "indicators": {
+                                "email_domains": {},
+                                "url_domains": [],
+                            },
+                            "risk": {
+                                "score": 10,
+                            },
+                        }
+                    ],
+                }
+            )
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == (
+        "At least two analyses are required."
+    )
+
+
+def test_correlate_campaign_endpoint_rejects_invalid_payload():
+    import asyncio
+
+    import pytest
+    from fastapi import HTTPException
+
+    from main import correlate_campaign
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(
+            correlate_campaign(
+                {
+                    "analyses": "not-a-list",
+                }
+            )
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == (
+        "analyses must be a list."
+    )

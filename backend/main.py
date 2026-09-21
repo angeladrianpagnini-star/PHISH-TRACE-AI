@@ -1,4 +1,4 @@
-﻿import hashlib
+import hashlib
 import re
 import secrets
 import unicodedata
@@ -875,6 +875,36 @@ def build_campaign(
         },
     }
 
+@app.post("/correlate/campaign")
+async def correlate_campaign(payload: dict[str, Any]):
+    analyses = payload.get("analyses")
+
+    if not isinstance(analyses, list):
+        raise HTTPException(
+            status_code=400,
+            detail="analyses must be a list.",
+        )
+
+    if len(analyses) < 2:
+        raise HTTPException(
+            status_code=400,
+            detail="At least two analyses are required.",
+        )
+
+    if not all(isinstance(item, dict) for item in analyses):
+        raise HTTPException(
+            status_code=400,
+            detail="Every analysis must be an object.",
+        )
+
+    try:
+        return build_campaign(analyses)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
 @app.post("/correlate")
 async def correlate(payload: dict[str, Any]):
     analysis_a = payload.get("analysis_a")
@@ -1034,4 +1064,3 @@ async def analyze_email(file: UploadFile = File(...)):
     }
 
     return result
-

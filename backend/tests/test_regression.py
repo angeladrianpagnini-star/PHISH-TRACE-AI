@@ -875,3 +875,186 @@ def test_correlate_campaign_endpoint_rejects_invalid_payload():
     assert exc_info.value.detail == (
         "analyses must be a list."
     )
+
+def test_campaign_id_is_deterministic():
+    from main import build_campaign
+
+    analysis_a = {
+        "filename": "CORP-A.eml",
+        "sha256": "a" * 64,
+        "indicators": {
+            "email_domains": {
+                "reply_to": "shared.example",
+                "return_path": "shared.example",
+            },
+            "url_domains": [
+                "login.shared.example",
+            ],
+        },
+        "risk": {
+            "score": 60,
+        },
+    }
+
+    analysis_b = {
+        "filename": "CORP-B.eml",
+        "sha256": "b" * 64,
+        "indicators": {
+            "email_domains": {
+                "reply_to": "shared.example",
+                "return_path": "shared.example",
+            },
+            "url_domains": [
+                "login.shared.example",
+            ],
+        },
+        "risk": {
+            "score": 55,
+        },
+    }
+
+    campaign_first = build_campaign(
+        [
+            analysis_a,
+            analysis_b,
+        ]
+    )
+
+    campaign_second = build_campaign(
+        [
+            analysis_b,
+            analysis_a,
+        ]
+    )
+
+    assert campaign_first["relationship"] == "RELATED_CAMPAIGN"
+    assert campaign_second["relationship"] == "RELATED_CAMPAIGN"
+
+    assert campaign_first["campaign_id"] == campaign_second["campaign_id"]
+
+    assert campaign_first["campaign_id"].startswith(
+        "CAMPAIGN-"
+    )
+
+    assert len(campaign_first["campaign_id"]) == 21
+
+
+def test_campaign_id_changes_when_shared_evidence_changes():
+    from main import build_campaign
+
+    campaign_alpha = build_campaign(
+        [
+            {
+                "filename": "ALPHA-A.eml",
+                "indicators": {
+                    "email_domains": {
+                        "reply_to": "alpha.example",
+                        "return_path": "alpha.example",
+                    },
+                    "url_domains": [
+                        "login.alpha.example",
+                    ],
+                },
+                "risk": {
+                    "score": 60,
+                },
+            },
+            {
+                "filename": "ALPHA-B.eml",
+                "indicators": {
+                    "email_domains": {
+                        "reply_to": "alpha.example",
+                        "return_path": "alpha.example",
+                    },
+                    "url_domains": [
+                        "login.alpha.example",
+                    ],
+                },
+                "risk": {
+                    "score": 55,
+                },
+            },
+        ]
+    )
+
+    campaign_beta = build_campaign(
+        [
+            {
+                "filename": "BETA-A.eml",
+                "indicators": {
+                    "email_domains": {
+                        "reply_to": "beta.example",
+                        "return_path": "beta.example",
+                    },
+                    "url_domains": [
+                        "login.beta.example",
+                    ],
+                },
+                "risk": {
+                    "score": 60,
+                },
+            },
+            {
+                "filename": "BETA-B.eml",
+                "indicators": {
+                    "email_domains": {
+                        "reply_to": "beta.example",
+                        "return_path": "beta.example",
+                    },
+                    "url_domains": [
+                        "login.beta.example",
+                    ],
+                },
+                "risk": {
+                    "score": 55,
+                },
+            },
+        ]
+    )
+
+    assert campaign_alpha["relationship"] == "RELATED_CAMPAIGN"
+    assert campaign_beta["relationship"] == "RELATED_CAMPAIGN"
+
+    assert campaign_alpha["campaign_id"] != campaign_beta["campaign_id"]
+
+
+def test_no_relationship_has_no_campaign_id():
+    from main import build_campaign
+
+    result = build_campaign(
+        [
+            {
+                "filename": "A.eml",
+                "indicators": {
+                    "email_domains": {
+                        "reply_to": "alpha.example",
+                        "return_path": "alpha.example",
+                    },
+                    "url_domains": [
+                        "login.alpha.example",
+                    ],
+                },
+                "risk": {
+                    "score": 10,
+                },
+            },
+            {
+                "filename": "B.eml",
+                "indicators": {
+                    "email_domains": {
+                        "reply_to": "beta.example",
+                        "return_path": "beta.example",
+                    },
+                    "url_domains": [
+                        "login.beta.example",
+                    ],
+                },
+                "risk": {
+                    "score": 15,
+                },
+            },
+        ]
+    )
+
+    assert result["relationship"] == "NO_TECHNICAL_RELATIONSHIP"
+    assert result["campaign_id"] is None

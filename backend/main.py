@@ -859,7 +859,24 @@ def build_campaign(
         else "LOW"
     )
 
+    campaign_id = None
+
+    if relationship == "RELATED_CAMPAIGN":
+        canonical_evidence = "|".join(
+            sorted(
+                f"{item['type']}:{item['value']}"
+                for item in shared_indicators
+            )
+        )
+
+        digest = hashlib.sha256(
+            canonical_evidence.encode("utf-8")
+        ).hexdigest()[:12].upper()
+
+        campaign_id = f"CAMPAIGN-{digest}"
+
     return {
+        "campaign_id": campaign_id,
         "analysis_count": len(analyses),
         "related_message_count": len(related_indexes),
         "relationship": relationship,

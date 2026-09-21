@@ -574,3 +574,172 @@ def test_no_shared_infrastructure_returns_no_relationship():
         correlation["correlated_risk"]["correlation_floor_applied"]
         is False
     )
+
+def test_build_campaign_requires_at_least_two_analyses():
+    import pytest
+    from main import build_campaign
+
+    with pytest.raises(ValueError):
+        build_campaign([])
+
+    with pytest.raises(ValueError):
+        build_campaign(
+            [
+                {
+                    "filename": "only-one.eml",
+                    "sha256": "a" * 64,
+                    "indicators": {
+                        "email_domains": {},
+                        "url_domains": [],
+                    },
+                    "risk": {
+                        "score": 10,
+                    },
+                }
+            ]
+        )
+
+
+def test_build_campaign_groups_related_messages():
+    from main import build_campaign
+
+    analyses = [
+        {
+            "filename": "CORP-A.eml",
+            "sha256": "a" * 64,
+            "indicators": {
+                "email_domains": {
+                    "from": "company-a.example",
+                    "reply_to": "shared.example",
+                    "return_path": "shared.example",
+                },
+                "url_domains": [
+                    "login.shared.example",
+                ],
+            },
+            "risk": {
+                "score": 60,
+            },
+        },
+        {
+            "filename": "CORP-B.eml",
+            "sha256": "b" * 64,
+            "indicators": {
+                "email_domains": {
+                    "from": "company-b.example",
+                    "reply_to": "shared.example",
+                    "return_path": "shared.example",
+                },
+                "url_domains": [
+                    "login.shared.example",
+                ],
+            },
+            "risk": {
+                "score": 55,
+            },
+        },
+        {
+            "filename": "UNRELATED.eml",
+            "sha256": "c" * 64,
+            "indicators": {
+                "email_domains": {
+                    "from": "unrelated.example",
+                    "reply_to": "other.example",
+                    "return_path": "other.example",
+                },
+                "url_domains": [
+                    "login.other.example",
+                ],
+            },
+            "risk": {
+                "score": 20,
+            },
+        },
+    ]
+
+    campaign = build_campaign(analyses)
+
+    assert campaign["analysis_count"] == 3
+    assert campaign["related_message_count"] == 2
+    assert campaign["relationship"] == "RELATED_CAMPAIGN"
+    assert campaign["confidence"] == "HIGH"
+    assert campaign["attribution"] == "NOT_DETERMINED"
+
+    assert set(campaign["related_filenames"]) == {
+        "CORP-A.eml",
+        "CORP-B.eml",
+    }
+
+    shared = {
+        (item["type"], item["value"])
+        for item in campaign["shared_indicators"]
+    }
+
+    assert (
+        "reply_to_domain",
+        "shared.example",
+    ) in shared
+
+    assert (
+        "return_path_domain",
+        "shared.example",
+    ) in shared
+
+    assert (
+        "url_domain",
+        "login.shared.example",
+    ) in shared
+
+    assert campaign["aggregate_risk"]["score"] == 75
+    assert campaign["aggregate_risk"]["classification"] == "CRITICAL"
+
+
+def test_build_campaign_does_not_create_false_campaign():
+    from main import build_campaign
+
+    analyses = [
+        {
+            "filename": "A.eml",
+            "sha256": "a" * 64,
+            "indicators": {
+                "email_domains": {
+                    "reply_to": "alpha.example",
+                    "return_path": "alpha.example",
+                },
+                "url_domains": [
+                    "login.alpha.example",
+                ],
+            },
+            "risk": {
+                "score": 10,
+            },
+        },
+        {
+            "filename": "B.eml",
+            "sha256": "b" * 64,
+            "indicators": {
+                "email_domains": {
+                    "reply_to": "beta.example",
+                    "return_path": "beta.example",
+                },
+                "url_domains": [
+                    "login.beta.example",
+                ],
+            },
+            "risk": {
+                "score": 15,
+            },
+        },
+    ]
+
+    campaign = build_campaign(analyses)
+
+    assert campaign["analysis_count"] == 2
+    assert campaign["related_message_count"] == 0
+    assert campaign["relationship"] == "NO_TECHNICAL_RELATIONSHIP"
+    assert campaign["confidence"] == "LOW"
+    assert campaign["shared_indicators"] == []
+    assert campaign["related_filenames"] == []
+    assert campaign["attribution"] == "NOT_DETERMINED"
+    assert campaign["aggregate_risk"]["score"] == 15
+    assert campaign["aggregate_risk"]["classification"] == "LOW"

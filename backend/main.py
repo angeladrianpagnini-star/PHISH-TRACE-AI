@@ -732,6 +732,149 @@ def correlate_analyses(
     }
 
 
+
+def build_campaign(
+    analyses: list[dict[str, Any]],
+) -> dict[str, Any]:
+    if len(analyses) < 2:
+        raise ValueError(
+            "At least two analyses are required to build a campaign."
+        )
+
+    related_indexes: set[int] = set()
+    related_pairs: list[dict[str, Any]] = []
+    shared_map: dict[tuple[str, str], dict[str, str]] = {}
+
+    aggregate_score = max(
+        analysis.get("risk", {}).get("score", 0)
+        for analysis in analyses
+    )
+
+    strongest_relationship = "NO_TECHNICAL_RELATIONSHIP"
+    strongest_confidence = "LOW"
+
+    relationship_rank = {
+        "NO_TECHNICAL_RELATIONSHIP": 0,
+        "WEAK_RELATIONSHIP": 1,
+        "POSSIBLY_RELATED": 2,
+        "RELATED_CAMPAIGN": 3,
+    }
+
+    confidence_rank = {
+        "LOW": 0,
+        "MEDIUM": 1,
+        "HIGH": 2,
+    }
+
+    for index_a in range(len(analyses)):
+        for index_b in range(index_a + 1, len(analyses)):
+            correlation = correlate_analyses(
+                analyses[index_a],
+                analyses[index_b],
+            )
+
+            relationship = correlation["relationship"]
+            confidence = correlation["confidence"]
+
+            if (
+                relationship_rank.get(relationship, 0)
+                > relationship_rank.get(strongest_relationship, 0)
+            ):
+                strongest_relationship = relationship
+
+            if (
+                confidence_rank.get(confidence, 0)
+                > confidence_rank.get(strongest_confidence, 0)
+            ):
+                strongest_confidence = confidence
+
+            if relationship == "RELATED_CAMPAIGN":
+                related_indexes.update(
+                    {
+                        index_a,
+                        index_b,
+                    }
+                )
+
+                related_pairs.append(
+                    {
+                        "analysis_a": index_a,
+                        "analysis_b": index_b,
+                        "filename_a": analyses[index_a].get(
+                            "filename",
+                            f"analysis-{index_a + 1}",
+                        ),
+                        "filename_b": analyses[index_b].get(
+                            "filename",
+                            f"analysis-{index_b + 1}",
+                        ),
+                        "relationship": relationship,
+                        "confidence": confidence,
+                        "shared_indicators": correlation[
+                            "shared_indicators"
+                        ],
+                    }
+                )
+
+                for indicator in correlation["shared_indicators"]:
+                    key = (
+                        indicator["type"],
+                        indicator["value"],
+                    )
+                    shared_map[key] = indicator
+
+    related_filenames = [
+        analyses[index].get(
+            "filename",
+            f"analysis-{index + 1}",
+        )
+        for index in sorted(related_indexes)
+    ]
+
+    shared_indicators = [
+        shared_map[key]
+        for key in sorted(shared_map)
+    ]
+
+    if related_indexes:
+        relationship = "RELATED_CAMPAIGN"
+        confidence = strongest_confidence
+
+        if aggregate_score >= 50:
+            aggregate_score = max(
+                aggregate_score,
+                75,
+            )
+    else:
+        relationship = strongest_relationship
+        confidence = strongest_confidence
+
+    classification = (
+        "CRITICAL"
+        if aggregate_score >= 75
+        else "HIGH"
+        if aggregate_score >= 50
+        else "SUSPICIOUS"
+        if aggregate_score >= 25
+        else "LOW"
+    )
+
+    return {
+        "analysis_count": len(analyses),
+        "related_message_count": len(related_indexes),
+        "relationship": relationship,
+        "confidence": confidence,
+        "related_filenames": related_filenames,
+        "shared_indicators": shared_indicators,
+        "shared_indicator_count": len(shared_indicators),
+        "related_pairs": related_pairs,
+        "attribution": "NOT_DETERMINED",
+        "aggregate_risk": {
+            "score": aggregate_score,
+            "classification": classification,
+        },
+    }
+
 @app.post("/correlate")
 async def correlate(payload: dict[str, Any]):
     analysis_a = payload.get("analysis_a")
@@ -891,3 +1034,4 @@ async def analyze_email(file: UploadFile = File(...)):
     }
 
     return result
+

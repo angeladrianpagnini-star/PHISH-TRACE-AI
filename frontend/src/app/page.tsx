@@ -84,6 +84,24 @@ type CorrelationResult = {
     correlation_floor_applied: boolean;
   };
 };
+
+type CampaignResult = {
+  campaign_id: string | null;
+  analysis_count: number;
+  related_message_count: number;
+  relationship: string;
+  confidence: string;
+  related_filenames: string[];
+  shared_indicators: Array<{
+    type: string;
+    value: string;
+  }>;
+  attribution: string;
+  aggregate_risk: {
+    score: number;
+    classification: string;
+  };
+};
 function displayLabel(value: string) {
   return value.replaceAll("_", " ");
 }
@@ -97,6 +115,11 @@ export default function Home() {
   const [correlation, setCorrelation] =
     useState<CorrelationResult | null>(null);
   const [correlating, setCorrelating] = useState(false);
+  const [campaignAnalyses, setCampaignAnalyses] =
+    useState<AnalysisResult[]>([]);
+  const [campaign, setCampaign] =
+    useState<CampaignResult | null>(null);
+  const [buildingCampaign, setBuildingCampaign] = useState(false);
   const [loading, setLoading] = useState(false);
   const [creatingIncident, setCreatingIncident] = useState(false);
   const [error, setError] = useState("");
@@ -224,6 +247,83 @@ export default function Home() {
       setCorrelating(false);
     }
   }
+  function addCurrentAnalysisToCampaign() {
+    if (!analysis) {
+      setError("Analyze an email before adding it to campaign analysis.");
+      return;
+    }
+
+    const alreadyAdded = campaignAnalyses.some(
+      (item) => item.sha256 === analysis.sha256
+    );
+
+    if (alreadyAdded) {
+      setError("This email is already included in campaign analysis.");
+      return;
+    }
+
+    setCampaignAnalyses((current) => [...current, analysis]);
+    setCampaign(null);
+    setError("");
+  }
+
+  function removeCampaignAnalysis(sha256: string) {
+    setCampaignAnalyses((current) =>
+      current.filter((item) => item.sha256 !== sha256)
+    );
+    setCampaign(null);
+    setError("");
+  }
+
+  function clearCampaignAnalyses() {
+    setCampaignAnalyses([]);
+    setCampaign(null);
+    setError("");
+  }
+
+  async function buildCampaignCorrelation() {
+    if (campaignAnalyses.length < 2) {
+      setError(
+        "At least two analyzed emails are required for campaign correlation."
+      );
+      return;
+    }
+
+    setBuildingCampaign(true);
+    setCampaign(null);
+    setError("");
+
+    try {
+      const response = await fetch(`${apiBase}/correlate/campaign`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          analyses: campaignAnalyses,
+        }),
+      });
+
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          payload.detail || "Campaign correlation failed."
+        );
+      }
+
+      setCampaign(payload);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unexpected campaign correlation error."
+      );
+    } finally {
+      setBuildingCampaign(false);
+    }
+  }
+
   async function createIncident() {
     if (!analysis) {
       setError("Analyze an email before creating an incident.");
@@ -685,6 +785,315 @@ export default function Home() {
                   </p>
                 </div>
               )}
+            <div
+              style={{
+                padding: "24px",
+                marginTop: "28px",
+                marginBottom: "28px",
+                border: "1px solid #38bdf8",
+                borderRadius: "14px",
+                background: "#0b1627",
+              }}
+            >
+              <p
+                style={{
+                  margin: 0,
+                  color: "#38bdf8",
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  letterSpacing: "0.12em",
+                }}
+              >
+                MULTI-EMAIL CAMPAIGN
+              </p>
+
+              <p
+                style={{
+                  color: "#cbd5e1",
+                  lineHeight: 1.6,
+                  marginTop: "16px",
+                }}
+              >
+                Group analyzed emails and correlate shared technical evidence
+                across multiple messages. Campaign correlation does not
+                establish attacker identity or legal attribution.
+              </p>
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: "12px",
+                  flexWrap: "wrap",
+                  marginTop: "18px",
+                }}
+              >
+                <button
+                  onClick={addCurrentAnalysisToCampaign}
+                  style={{
+                    padding: "12px 18px",
+                    borderRadius: "8px",
+                    border: 0,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  ADD CURRENT EMAIL
+                </button>
+
+                {campaignAnalyses.length > 0 && (
+                  <button
+                    onClick={clearCampaignAnalyses}
+                    style={{
+                      padding: "12px 18px",
+                      borderRadius: "8px",
+                      border: "1px solid #64748b",
+                      background: "transparent",
+                      color: "#cbd5e1",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    CLEAR CAMPAIGN SET
+                  </button>
+                )}
+              </div>
+
+              <p
+                style={{
+                  marginTop: "20px",
+                  color: "#94a3b8",
+                  fontSize: "13px",
+                }}
+              >
+                Emails selected: {campaignAnalyses.length}
+              </p>
+
+              {campaignAnalyses.length > 0 && (
+                <div style={{ marginTop: "14px" }}>
+                  {campaignAnalyses.map((item) => (
+                    <div
+                      key={item.sha256}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: "16px",
+                        alignItems: "center",
+                        padding: "10px 0",
+                        borderBottom: "1px solid #1e293b",
+                      }}
+                    >
+                      <div style={{ minWidth: 0 }}>
+                        <strong>{item.filename}</strong>
+                        <div
+                          style={{
+                            color: "#64748b",
+                            fontSize: "12px",
+                            overflowWrap: "anywhere",
+                            marginTop: "4px",
+                          }}
+                        >
+                          {item.sha256}
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() =>
+                          removeCampaignAnalysis(item.sha256)
+                        }
+                        style={{
+                          padding: "8px 12px",
+                          borderRadius: "7px",
+                          border: "1px solid #64748b",
+                          background: "transparent",
+                          color: "#cbd5e1",
+                          cursor: "pointer",
+                          flexShrink: 0,
+                        }}
+                      >
+                        REMOVE
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <button
+                onClick={buildCampaignCorrelation}
+                disabled={
+                  campaignAnalyses.length < 2 ||
+                  buildingCampaign
+                }
+                style={{
+                  marginTop: "20px",
+                  padding: "14px 24px",
+                  borderRadius: "8px",
+                  border: 0,
+                  fontWeight: 700,
+                  cursor:
+                    campaignAnalyses.length < 2 ||
+                    buildingCampaign
+                      ? "not-allowed"
+                      : "pointer",
+                  opacity:
+                    campaignAnalyses.length < 2
+                      ? 0.5
+                      : 1,
+                }}
+              >
+                {buildingCampaign
+                  ? "BUILDING CAMPAIGN..."
+                  : "BUILD CAMPAIGN CORRELATION"}
+              </button>
+
+              {campaign && (
+                <div
+                  style={{
+                    marginTop: "26px",
+                    paddingTop: "22px",
+                    borderTop: "1px solid #334155",
+                  }}
+                >
+                  <p
+                    style={{
+                      margin: 0,
+                      color: "#94a3b8",
+                      fontSize: "12px",
+                    }}
+                  >
+                    CAMPAIGN ID
+                  </p>
+
+                  <strong
+                    style={{
+                      display: "block",
+                      marginTop: "6px",
+                      fontSize: "22px",
+                      overflowWrap: "anywhere",
+                    }}
+                  >
+                    {campaign.campaign_id ?? "NOT ESTABLISHED"}
+                  </strong>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "28px",
+                      flexWrap: "wrap",
+                      marginTop: "24px",
+                    }}
+                  >
+                    <div>
+                      <p
+                        style={{
+                          margin: 0,
+                          color: "#94a3b8",
+                          fontSize: "12px",
+                        }}
+                      >
+                        AGGREGATE RISK
+                      </p>
+                      <strong style={{ fontSize: "26px" }}>
+                        {campaign.aggregate_risk.score}{" "}
+                        {campaign.aggregate_risk.classification}
+                      </strong>
+                    </div>
+
+                    <div>
+                      <p
+                        style={{
+                          margin: 0,
+                          color: "#94a3b8",
+                          fontSize: "12px",
+                        }}
+                      >
+                        RELATED MESSAGES
+                      </p>
+                      <strong style={{ fontSize: "26px" }}>
+                        {campaign.related_message_count}/
+                        {campaign.analysis_count}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: "22px",
+                      lineHeight: 1.8,
+                    }}
+                  >
+                    <p>
+                      <strong>Relationship:</strong>{" "}
+                      {displayLabel(campaign.relationship)}
+                    </p>
+
+                    <p>
+                      <strong>Confidence:</strong>{" "}
+                      {campaign.confidence}
+                    </p>
+
+                    <p>
+                      <strong>Attribution:</strong>{" "}
+                      {displayLabel(campaign.attribution)}
+                    </p>
+                  </div>
+
+                  {campaign.related_filenames.length > 0 && (
+                    <>
+                      <h4 style={{ marginTop: "22px" }}>
+                        Related Emails
+                      </h4>
+
+                      <ul style={{ lineHeight: 1.8 }}>
+                        {campaign.related_filenames.map(
+                          (filename) => (
+                            <li key={filename}>
+                              {filename}
+                            </li>
+                          )
+                        )}
+                      </ul>
+                    </>
+                  )}
+
+                  {campaign.shared_indicators.length > 0 && (
+                    <>
+                      <h4 style={{ marginTop: "22px" }}>
+                        Shared Campaign Evidence
+                      </h4>
+
+                      <ul style={{ lineHeight: 1.8 }}>
+                        {campaign.shared_indicators.map(
+                          (indicator, index) => (
+                            <li
+                              key={`${indicator.type}-${indicator.value}-${index}`}
+                            >
+                              <strong>
+                                {displayLabel(indicator.type)}
+                              </strong>
+                              : {indicator.value}
+                            </li>
+                          )
+                        )}
+                      </ul>
+                    </>
+                  )}
+
+                  <p
+                    style={{
+                      marginTop: "22px",
+                      color: "#94a3b8",
+                      fontSize: "13px",
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    Campaign identity is derived from shared technical
+                    evidence. It does not identify a person, organization,
+                    or legally responsible actor.
+                  </p>
+                </div>
+              )}
+            </div>
+
             <RemediationActors
               classification={analysis.risk.classification}
               correlationRelationship={correlation?.relationship}

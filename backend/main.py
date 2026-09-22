@@ -80,6 +80,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
+        "http://127.0.0.1:3000",
         "https://phish-trace-ai-psi.vercel.app",
     ],
     allow_origin_regex=r"^https://phish-trace-ai(?:-[a-z0-9-]+)?\.vercel\.app$",

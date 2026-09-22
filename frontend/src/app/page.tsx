@@ -132,6 +132,7 @@ export default function Home() {
   const [error, setError] = useState("");
 
   const apiBase =
+    process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ||
     "https://phish-trace-ai-v1-2-backend-production.up.railway.app";
 
   useEffect(() => {

@@ -198,7 +198,7 @@ export default function IncidentAuditTimeline({
                     fontSize: "14px",
                   }}
                 >
-                  Actor: {event.actor ?? "SYSTEM"}
+                  Actor: {event.actor ?? "NOT RECORDED"}
                 </div>
 
                 {summary.length > 0 && (

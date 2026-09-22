@@ -2380,3 +2380,199 @@ def test_incident_assignment_api_returns_500_on_persistence_failure(
         raise AssertionError(
             "Expected HTTPException was not raised."
         )
+
+
+def test_incident_audit_event_builder():
+    import main
+
+    event = main.build_incident_audit_event(
+        "INC-TEST-001",
+        "state_changed",
+        {
+            "from": "NEW",
+            "to": "TRIAGED",
+        },
+        actor="analyst-01",
+    )
+
+    assert event["schema_version"] == "1.0"
+    assert event["event_id"].startswith("EVT-")
+    assert event["incident_id"] == "INC-TEST-001"
+    assert event["event_type"] == "STATE_CHANGED"
+    assert event["actor"] == "analyst-01"
+    assert event["details"] == {
+        "from": "NEW",
+        "to": "TRIAGED",
+    }
+    assert event["created_at"]
+
+
+def test_incident_audit_event_builder_normalizes_actor():
+    import main
+
+    event = main.build_incident_audit_event(
+        "INC-TEST-002",
+        "assignment_changed",
+        {},
+        actor="  analyst-02  ",
+    )
+
+    assert event["actor"] == "analyst-02"
+
+
+def test_incident_audit_event_builder_allows_system_actor():
+    import main
+
+    event = main.build_incident_audit_event(
+        "INC-TEST-003",
+        "created",
+        {},
+    )
+
+    assert event["actor"] is None
+
+
+def test_incident_audit_repository_appends_and_lists(
+    tmp_path,
+):
+    import main
+
+    repository = main.IncidentRepository(
+        tmp_path / "audit.db"
+    )
+
+    first = main.build_incident_audit_event(
+        "INC-AUDIT-001",
+        "created",
+        {"status": "OPEN"},
+    )
+
+    second = main.build_incident_audit_event(
+        "INC-AUDIT-001",
+        "state_changed",
+        {
+            "from": "NEW",
+            "to": "TRIAGED",
+        },
+        actor="analyst-01",
+    )
+
+    repository.append_audit_event(first)
+    repository.append_audit_event(second)
+
+    events = repository.list_audit_events(
+        "INC-AUDIT-001"
+    )
+
+    assert len(events) == 2
+    assert events[0] == first
+    assert events[1] == second
+
+
+def test_incident_audit_repository_filters_by_incident(
+    tmp_path,
+):
+    import main
+
+    repository = main.IncidentRepository(
+        tmp_path / "audit-filter.db"
+    )
+
+    first = main.build_incident_audit_event(
+        "INC-A",
+        "created",
+        {},
+    )
+
+    second = main.build_incident_audit_event(
+        "INC-B",
+        "created",
+        {},
+    )
+
+    repository.append_audit_event(first)
+    repository.append_audit_event(second)
+
+    events_a = repository.list_audit_events("INC-A")
+    events_b = repository.list_audit_events("INC-B")
+
+    assert events_a == [first]
+    assert events_b == [second]
+
+
+def test_incident_audit_repository_empty_history(
+    tmp_path,
+):
+    import main
+
+    repository = main.IncidentRepository(
+        tmp_path / "audit-empty.db"
+    )
+
+    assert repository.list_audit_events(
+        "INC-UNKNOWN"
+    ) == []
+
+
+def test_incident_audit_repository_is_append_only(
+    tmp_path,
+):
+    import sqlite3
+    import main
+
+    repository = main.IncidentRepository(
+        tmp_path / "audit-append-only.db"
+    )
+
+    event = main.build_incident_audit_event(
+        "INC-AUDIT-002",
+        "created",
+        {},
+    )
+
+    repository.append_audit_event(event)
+
+    try:
+        repository.append_audit_event(event)
+    except sqlite3.IntegrityError:
+        pass
+    else:
+        raise AssertionError(
+            "Duplicate audit event must not overwrite existing history."
+        )
+
+    events = repository.list_audit_events(
+        "INC-AUDIT-002"
+    )
+
+    assert events == [event]
+
+
+def test_incident_audit_repository_survives_reinstantiation(
+    tmp_path,
+):
+    import main
+
+    db_path = tmp_path / "audit-reopen.db"
+
+    first_repository = main.IncidentRepository(
+        db_path
+    )
+
+    event = main.build_incident_audit_event(
+        "INC-AUDIT-003",
+        "created",
+        {},
+    )
+
+    first_repository.append_audit_event(event)
+
+    second_repository = main.IncidentRepository(
+        db_path
+    )
+
+    events = second_repository.list_audit_events(
+        "INC-AUDIT-003"
+    )
+
+    assert events == [event]

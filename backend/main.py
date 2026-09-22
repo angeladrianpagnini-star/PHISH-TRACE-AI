@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from email import policy
 from email.parser import BytesParser
 from email.utils import parseaddr
-from typing import Any
+from typing import Any, List
 from urllib.parse import urlparse
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -973,6 +973,29 @@ class IncidentRepository:
                 )
                 """
             )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS incident_audit_events (
+                    event_id TEXT PRIMARY KEY,
+                    incident_id TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    actor TEXT,
+                    event_json TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS
+                    idx_incident_audit_events_incident_created
+                ON incident_audit_events (
+                    incident_id,
+                    created_at,
+                    event_id
+                )
+                """
+            )
             connection.commit()
 
     def save(self, incident: dict[str, Any]) -> dict[str, Any]:
@@ -1050,6 +1073,62 @@ class IncidentRepository:
             for row in rows
         ]
 
+    def append_audit_event(
+        self,
+        event: dict[str, Any],
+    ) -> dict[str, Any]:
+        payload = json.dumps(
+            event,
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+
+        with closing(self._connect()) as connection:
+            connection.execute(
+                """
+                INSERT INTO incident_audit_events (
+                    event_id,
+                    incident_id,
+                    event_type,
+                    created_at,
+                    actor,
+                    event_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event["event_id"],
+                    event["incident_id"],
+                    event["event_type"],
+                    event["created_at"],
+                    event.get("actor"),
+                    payload,
+                ),
+            )
+            connection.commit()
+
+        return event
+
+    def list_audit_events(
+        self,
+        incident_id: str,
+    ) -> List[dict[str, Any]]:
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                """
+                SELECT event_json
+                FROM incident_audit_events
+                WHERE incident_id = ?
+                ORDER BY created_at ASC, event_id ASC
+                """,
+                (incident_id,),
+            ).fetchall()
+
+        return [
+            json.loads(row["event_json"])
+            for row in rows
+        ]
+
 
 INCIDENT_LIFECYCLE_TRANSITIONS = {
     "NEW": {"TRIAGED"},
@@ -1100,6 +1179,38 @@ def transition_incident(
         updated_incident["status"] = "OPEN"
 
     return updated_incident
+
+
+def build_incident_audit_event(
+    incident_id: str,
+    event_type: str,
+    details: dict[str, Any],
+    actor: str | None = None,
+) -> dict[str, Any]:
+    created_at = datetime.now(timezone.utc).isoformat()
+
+    normalized_event_type = str(event_type).strip().upper()
+
+    if not normalized_event_type:
+        raise ValueError("Audit event type is required.")
+
+    normalized_actor = None
+
+    if actor is not None:
+        normalized_actor = str(actor).strip()
+
+        if not normalized_actor:
+            normalized_actor = None
+
+    return {
+        "schema_version": "1.0",
+        "event_id": f"EVT-{secrets.token_hex(8).upper()}",
+        "incident_id": incident_id,
+        "event_type": normalized_event_type,
+        "created_at": created_at,
+        "actor": normalized_actor,
+        "details": details,
+    }
 
 
 INCIDENT_PRIORITY_BY_SEVERITY = {

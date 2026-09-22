@@ -3,20 +3,14 @@
 import { ChangeEvent, useEffect, useState } from "react";
 import ThreatGraph from "../components/ThreatGraph";
 import RemediationActors from "../components/RemediationActors";
+import IncidentSocPanel, { IncidentSocRecord } from "../components/IncidentSocPanel";
 
 type HealthResponse = {
   status: string;
   service: string;
 };
 
-type IncidentResult = {
-  incident_id: string;
-  created_at: string;
-  status: string;
-  retention: {
-    mode: string;
-    persisted: boolean;
-  };
+type IncidentResult = IncidentSocRecord & {
   evidence: AnalysisResult;
 };
 
@@ -1151,57 +1145,10 @@ export default function Home() {
                   </button>
                 </>
               ) : (
-                <>
-                  <div style={{ marginTop: "18px", lineHeight: 1.8 }}>
-                    <p>
-                      <strong>Incident ID:</strong> {incident.incident_id}
-                    </p>
-
-                    <p>
-                      <strong>Status:</strong> {incident.status}
-                    </p>
-
-                    <p>
-                      <strong>Created:</strong>{" "}
-                      {new Date(incident.created_at).toLocaleString()}
-                    </p>
-
-                    <p>
-                      <strong>Retention:</strong>{" "}
-                      {incident.retention.mode.toUpperCase()}
-                    </p>
-
-                    <p>
-                      <strong>Server persistence:</strong>{" "}
-                      {incident.retention.persisted ? "YES" : "NO"}
-                    </p>
-                  </div>
-
-                  <button
-                    onClick={exportIncidentJson}
-                    style={{
-                      marginTop: "10px",
-                      padding: "14px 24px",
-                      borderRadius: "8px",
-                      border: 0,
-                      fontWeight: 700,
-                      cursor: "pointer",
-                    }}
-                  >
-                    EXPORT EVIDENCE JSON
-                  </button>
-
-                  <p
-                    style={{
-                      marginTop: "16px",
-                      color: "#94a3b8",
-                      fontSize: "13px",
-                    }}
-                  >
-                    Evidence export preserves the analyzed message SHA-256,
-                    findings, risk assessment and security controls.
-                  </p>
-                </>
+                <IncidentSocPanel
+                  incident={incident}
+                  onExport={exportIncidentJson}
+                />
               )}
             </div>
 
@@ -1279,23 +1226,3 @@ export default function Home() {
     </main>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

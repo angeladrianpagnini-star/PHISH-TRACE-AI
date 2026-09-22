@@ -1563,3 +1563,183 @@ def test_incident_api_returns_500_when_persistence_fails(
         raise AssertionError(
             "Expected HTTPException was not raised."
         )
+
+
+def test_incident_retrieval_api_lists_incidents(
+    tmp_path,
+    monkeypatch,
+):
+    import asyncio
+    import main
+
+    repository = main.IncidentRepository(
+        tmp_path / "retrieval-list.db"
+    )
+
+    monkeypatch.setattr(
+        main,
+        "incident_repository",
+        repository,
+    )
+
+    first = main.build_incident(
+        {
+            "filename": "FIRST.eml",
+            "risk": {
+                "score": 50,
+                "classification": "HIGH",
+                "confidence": "MEDIUM",
+                "scoring_version": "1.2",
+            },
+        }
+    )
+    first["retention"]["persisted"] = True
+    repository.save(first)
+
+    second = main.build_incident(
+        {
+            "filename": "SECOND.eml",
+            "risk": {
+                "score": 75,
+                "classification": "CRITICAL",
+                "confidence": "HIGH",
+                "scoring_version": "1.2",
+            },
+        }
+    )
+    second["retention"]["persisted"] = True
+    repository.save(second)
+
+    incidents = asyncio.run(
+        main.list_incidents()
+    )
+
+    assert len(incidents) == 2
+
+    incident_ids = {
+        incident["incident_id"]
+        for incident in incidents
+    }
+
+    assert incident_ids == {
+        first["incident_id"],
+        second["incident_id"],
+    }
+
+
+def test_incident_retrieval_api_gets_incident_by_id(
+    tmp_path,
+    monkeypatch,
+):
+    import asyncio
+    import main
+
+    repository = main.IncidentRepository(
+        tmp_path / "retrieval-get.db"
+    )
+
+    monkeypatch.setattr(
+        main,
+        "incident_repository",
+        repository,
+    )
+
+    incident = main.build_incident(
+        {
+            "filename": "GET-BY-ID.eml",
+            "sha256": "c" * 64,
+            "message_id": "<get-by-id@example.com>",
+            "risk": {
+                "score": 75,
+                "classification": "CRITICAL",
+                "confidence": "HIGH",
+                "scoring_version": "1.2",
+            },
+        }
+    )
+    incident["retention"]["persisted"] = True
+
+    repository.save(incident)
+
+    result = asyncio.run(
+        main.get_incident(
+            incident["incident_id"]
+        )
+    )
+
+    assert result == incident
+    assert result["incident_id"] == incident["incident_id"]
+    assert result["evidence"]["filename"] == "GET-BY-ID.eml"
+    assert result["retention"]["persisted"] is True
+
+
+def test_incident_retrieval_api_returns_404_for_unknown_id(
+    tmp_path,
+    monkeypatch,
+):
+    import asyncio
+    import main
+    from fastapi import HTTPException
+
+    repository = main.IncidentRepository(
+        tmp_path / "retrieval-404.db"
+    )
+
+    monkeypatch.setattr(
+        main,
+        "incident_repository",
+        repository,
+    )
+
+    try:
+        asyncio.run(
+            main.get_incident(
+                "INC-UNKNOWN"
+            )
+        )
+    except HTTPException as exc:
+        assert exc.status_code == 404
+        assert exc.detail == "Incident not found."
+    else:
+        raise AssertionError(
+            "Expected HTTPException was not raised."
+        )
+
+
+def test_incident_retrieval_api_returns_500_on_repository_failure(
+    monkeypatch,
+):
+    import asyncio
+    import main
+    from fastapi import HTTPException
+
+    class FailingIncidentRepository:
+        def list(self):
+            raise RuntimeError(
+                "simulated database failure"
+            )
+
+        def get(self, incident_id):
+            raise RuntimeError(
+                "simulated database failure"
+            )
+
+    monkeypatch.setattr(
+        main,
+        "incident_repository",
+        FailingIncidentRepository(),
+    )
+
+    for operation in (
+        lambda: main.list_incidents(),
+        lambda: main.get_incident("INC-FAIL"),
+    ):
+        try:
+            asyncio.run(operation())
+        except HTTPException as exc:
+            assert exc.status_code == 500
+            assert exc.detail == "Incident retrieval failed."
+        else:
+            raise AssertionError(
+                "Expected HTTPException was not raised."
+            )

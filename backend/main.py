@@ -1182,6 +1182,36 @@ async def create_incident(analysis: dict[str, Any]):
     return incident
 
 
+@app.get("/incidents")
+async def list_incidents():
+    try:
+        return incident_repository.list()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Incident retrieval failed.",
+        ) from exc
+
+
+@app.get("/incidents/{incident_id}")
+async def get_incident(incident_id: str):
+    try:
+        incident = incident_repository.get(incident_id)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Incident retrieval failed.",
+        ) from exc
+
+    if incident is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Incident not found.",
+        )
+
+    return incident
+
+
 @app.post("/analyze")
 async def analyze_email(file: UploadFile = File(...)):
     filename = file.filename or "unknown.eml"

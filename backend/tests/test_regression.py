@@ -1328,3 +1328,238 @@ def test_incident_transition_preserves_original_record():
     assert updated["created_at"] == incident["created_at"]
     assert updated["evidence"] == original_evidence
     assert updated["evidence"] is incident["evidence"]
+
+
+def test_incident_repository_persists_and_retrieves(tmp_path):
+    from main import IncidentRepository, build_incident
+
+    db_path = tmp_path / "incidents.db"
+    repository = IncidentRepository(db_path)
+
+    incident = build_incident(
+        {
+            "filename": "PERSIST.eml",
+            "sha256": "f" * 64,
+            "message_id": "<persist@example.com>",
+            "risk": {
+                "score": 75,
+                "classification": "CRITICAL",
+                "confidence": "HIGH",
+                "scoring_version": "1.2",
+            },
+        }
+    )
+
+    repository.save(incident)
+    stored = repository.get(incident["incident_id"])
+
+    assert db_path.exists()
+    assert stored == incident
+    assert stored["incident_id"] == incident["incident_id"]
+    assert stored["evidence"]["filename"] == "PERSIST.eml"
+
+
+def test_incident_repository_returns_none_for_unknown_id(tmp_path):
+    from main import IncidentRepository
+
+    repository = IncidentRepository(tmp_path / "incidents.db")
+
+    assert repository.get("INC-UNKNOWN") is None
+
+
+def test_incident_repository_lists_saved_incidents(tmp_path):
+    from main import IncidentRepository, build_incident
+
+    repository = IncidentRepository(tmp_path / "incidents.db")
+
+    first = build_incident(
+        {
+            "filename": "FIRST.eml",
+            "risk": {"classification": "LOW"},
+        }
+    )
+    second = build_incident(
+        {
+            "filename": "SECOND.eml",
+            "risk": {"classification": "HIGH"},
+        }
+    )
+
+    repository.save(first)
+    repository.save(second)
+
+    incidents = repository.list()
+    ids = {item["incident_id"] for item in incidents}
+
+    assert len(incidents) == 2
+    assert ids == {
+        first["incident_id"],
+        second["incident_id"],
+    }
+
+
+def test_incident_repository_updates_existing_incident(tmp_path):
+    from main import (
+        IncidentRepository,
+        build_incident,
+        transition_incident,
+    )
+
+    repository = IncidentRepository(tmp_path / "incidents.db")
+
+    incident = build_incident(
+        {
+            "filename": "UPDATE.eml",
+            "risk": {"classification": "HIGH"},
+        }
+    )
+
+    repository.save(incident)
+
+    updated = transition_incident(incident, "TRIAGED")
+    repository.save(updated)
+
+    stored = repository.get(incident["incident_id"])
+    incidents = repository.list()
+
+    assert len(incidents) == 1
+    assert stored["incident_id"] == incident["incident_id"]
+    assert stored["lifecycle"]["state"] == "TRIAGED"
+    assert stored["status"] == "OPEN"
+
+
+def test_incident_repository_survives_reinstantiation(tmp_path):
+    from main import IncidentRepository, build_incident
+
+    db_path = tmp_path / "incidents.db"
+
+    first_repository = IncidentRepository(db_path)
+
+    incident = build_incident(
+        {
+            "filename": "RESTART.eml",
+            "risk": {"classification": "SUSPICIOUS"},
+        }
+    )
+
+    first_repository.save(incident)
+
+    second_repository = IncidentRepository(db_path)
+    stored = second_repository.get(incident["incident_id"])
+
+    assert stored == incident
+    assert stored["evidence"]["filename"] == "RESTART.eml"
+
+
+def test_incident_api_persists_created_incident(
+    tmp_path,
+    monkeypatch,
+):
+    import asyncio
+    import main
+
+    db_path = tmp_path / "api-incidents.db"
+    repository = main.IncidentRepository(db_path)
+
+    monkeypatch.setattr(
+        main,
+        "incident_repository",
+        repository,
+    )
+
+    analysis = {
+        "filename": "API-PERSIST.eml",
+        "sha256": "b" * 64,
+        "message_id": "<api-persist@example.com>",
+        "risk": {
+            "score": 75,
+            "classification": "CRITICAL",
+            "confidence": "HIGH",
+            "scoring_version": "1.2",
+        },
+    }
+
+    incident = asyncio.run(
+        main.create_incident(analysis)
+    )
+
+    assert incident["status"] == "OPEN"
+    assert incident["severity"] == "CRITICAL"
+    assert incident["priority"] == "P1"
+    assert incident["lifecycle"]["state"] == "NEW"
+    assert incident["retention"]["mode"] == "explicit"
+    assert incident["retention"]["persisted"] is True
+    assert incident["evidence"] == analysis
+
+    stored = repository.get(incident["incident_id"])
+
+    assert stored is not None
+    assert stored == incident
+    assert stored["retention"]["persisted"] is True
+
+    connection = repository._connect()
+
+    try:
+        row = connection.execute(
+            """
+            SELECT
+                incident_id,
+                status,
+                severity,
+                priority,
+                lifecycle_state,
+                incident_json
+            FROM incidents
+            WHERE incident_id = ?
+            """,
+            (incident["incident_id"],),
+        ).fetchone()
+    finally:
+        connection.close()
+
+    assert row is not None
+    assert row["incident_id"] == incident["incident_id"]
+    assert row["status"] == "OPEN"
+    assert row["severity"] == "CRITICAL"
+    assert row["priority"] == "P1"
+    assert row["lifecycle_state"] == "NEW"
+    assert '"persisted": true' in row["incident_json"]
+
+
+def test_incident_api_returns_500_when_persistence_fails(
+    monkeypatch,
+):
+    import asyncio
+    import main
+    from fastapi import HTTPException
+
+    class FailingIncidentRepository:
+        def save(self, incident):
+            raise RuntimeError(
+                "simulated database failure"
+            )
+
+    monkeypatch.setattr(
+        main,
+        "incident_repository",
+        FailingIncidentRepository(),
+    )
+
+    try:
+        asyncio.run(
+            main.create_incident(
+                {
+                    "filename": "FAIL.eml",
+                    "risk": {
+                        "classification": "HIGH",
+                    },
+                }
+            )
+        )
+    except HTTPException as exc:
+        assert exc.status_code == 500
+        assert exc.detail == "Incident persistence failed."
+    else:
+        raise AssertionError(
+            "Expected HTTPException was not raised."
+        )

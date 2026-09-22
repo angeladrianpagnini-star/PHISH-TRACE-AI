@@ -1,7 +1,11 @@
 import hashlib
+import json
 import re
 import secrets
+import sqlite3
 import unicodedata
+from pathlib import Path
+from contextlib import closing
 from datetime import datetime, timezone
 from email import policy
 from email.parser import BytesParser
@@ -935,6 +939,118 @@ async def correlate(payload: dict[str, Any]):
 
     return correlate_analyses(analysis_a, analysis_b)
 
+DEFAULT_INCIDENT_DB_PATH = (
+    Path(__file__).resolve().parent
+    / "data"
+    / "phish_trace.db"
+)
+
+
+class IncidentRepository:
+    def __init__(self, db_path: str | Path = DEFAULT_INCIDENT_DB_PATH):
+        self.db_path = Path(db_path)
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._initialize()
+
+    def _connect(self) -> sqlite3.Connection:
+        connection = sqlite3.connect(self.db_path)
+        connection.row_factory = sqlite3.Row
+        return connection
+
+    def _initialize(self) -> None:
+        with closing(self._connect()) as connection:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS incidents (
+                    incident_id TEXT PRIMARY KEY,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    severity TEXT NOT NULL,
+                    priority TEXT NOT NULL,
+                    lifecycle_state TEXT NOT NULL,
+                    incident_json TEXT NOT NULL
+                )
+                """
+            )
+            connection.commit()
+
+    def save(self, incident: dict[str, Any]) -> dict[str, Any]:
+        payload = json.dumps(
+            incident,
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+
+        with closing(self._connect()) as connection:
+            connection.execute(
+                """
+                INSERT INTO incidents (
+                    incident_id,
+                    created_at,
+                    updated_at,
+                    status,
+                    severity,
+                    priority,
+                    lifecycle_state,
+                    incident_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(incident_id) DO UPDATE SET
+                    updated_at = excluded.updated_at,
+                    status = excluded.status,
+                    severity = excluded.severity,
+                    priority = excluded.priority,
+                    lifecycle_state = excluded.lifecycle_state,
+                    incident_json = excluded.incident_json
+                """,
+                (
+                    incident["incident_id"],
+                    incident["created_at"],
+                    incident["updated_at"],
+                    incident["status"],
+                    incident["severity"],
+                    incident["priority"],
+                    incident["lifecycle"]["state"],
+                    payload,
+                ),
+            )
+            connection.commit()
+
+        return incident
+
+    def get(self, incident_id: str) -> dict[str, Any] | None:
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                """
+                SELECT incident_json
+                FROM incidents
+                WHERE incident_id = ?
+                """,
+                (incident_id,),
+            ).fetchone()
+
+        if row is None:
+            return None
+
+        return json.loads(row["incident_json"])
+
+    def list(self) -> list[dict[str, Any]]:
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                """
+                SELECT incident_json
+                FROM incidents
+                ORDER BY created_at DESC, incident_id DESC
+                """
+            ).fetchall()
+
+        return [
+            json.loads(row["incident_json"])
+            for row in rows
+        ]
+
+
 INCIDENT_LIFECYCLE_TRANSITIONS = {
     "NEW": {"TRIAGED"},
     "TRIAGED": {"IN_PROGRESS", "RESOLVED"},
@@ -1046,9 +1162,24 @@ def build_incident(analysis: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+incident_repository = IncidentRepository()
+
+
 @app.post("/incidents")
 async def create_incident(analysis: dict[str, Any]):
-    return build_incident(analysis)
+    incident = build_incident(analysis)
+
+    incident["retention"]["persisted"] = True
+
+    try:
+        incident_repository.save(incident)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Incident persistence failed.",
+        ) from exc
+
+    return incident
 
 
 @app.post("/analyze")

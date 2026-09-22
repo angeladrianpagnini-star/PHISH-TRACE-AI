@@ -1743,3 +1743,315 @@ def test_incident_retrieval_api_returns_500_on_repository_failure(
             raise AssertionError(
                 "Expected HTTPException was not raised."
             )
+
+
+def test_incident_state_api_persists_valid_transition(
+    tmp_path,
+    monkeypatch,
+):
+    import asyncio
+    import main
+
+    repository = main.IncidentRepository(
+        tmp_path / "state-valid.db"
+    )
+
+    monkeypatch.setattr(
+        main,
+        "incident_repository",
+        repository,
+    )
+
+    incident = main.build_incident(
+        {
+            "filename": "STATE.eml",
+            "risk": {
+                "score": 75,
+                "classification": "CRITICAL",
+                "confidence": "HIGH",
+                "scoring_version": "1.2",
+            },
+        }
+    )
+    incident["retention"]["persisted"] = True
+    repository.save(incident)
+
+    original_updated_at = incident["updated_at"]
+
+    updated = asyncio.run(
+        main.update_incident_state(
+            incident["incident_id"],
+            {"state": "TRIAGED"},
+        )
+    )
+
+    assert updated["lifecycle"]["state"] == "TRIAGED"
+    assert updated["status"] == "OPEN"
+    assert updated["updated_at"] >= original_updated_at
+
+    stored = repository.get(
+        incident["incident_id"]
+    )
+
+    assert stored == updated
+    assert stored["lifecycle"]["state"] == "TRIAGED"
+
+
+def test_incident_state_api_persists_full_lifecycle(
+    tmp_path,
+    monkeypatch,
+):
+    import asyncio
+    import main
+
+    repository = main.IncidentRepository(
+        tmp_path / "state-full.db"
+    )
+
+    monkeypatch.setattr(
+        main,
+        "incident_repository",
+        repository,
+    )
+
+    incident = main.build_incident(
+        {
+            "filename": "FULL-LIFECYCLE.eml",
+            "risk": {
+                "classification": "HIGH",
+            },
+        }
+    )
+    incident["retention"]["persisted"] = True
+    repository.save(incident)
+
+    incident_id = incident["incident_id"]
+
+    for state in (
+        "TRIAGED",
+        "IN_PROGRESS",
+        "RESOLVED",
+        "CLOSED",
+    ):
+        updated = asyncio.run(
+            main.update_incident_state(
+                incident_id,
+                {"state": state},
+            )
+        )
+
+        assert updated["lifecycle"]["state"] == state
+
+    stored = repository.get(incident_id)
+
+    assert stored is not None
+    assert stored["status"] == "CLOSED"
+    assert stored["lifecycle"]["state"] == "CLOSED"
+    assert stored["lifecycle"]["closed_at"] is not None
+
+
+def test_incident_state_api_requires_state(
+    tmp_path,
+    monkeypatch,
+):
+    import asyncio
+    import main
+    from fastapi import HTTPException
+
+    repository = main.IncidentRepository(
+        tmp_path / "state-required.db"
+    )
+
+    monkeypatch.setattr(
+        main,
+        "incident_repository",
+        repository,
+    )
+
+    for payload in ({}, {"state": ""}, {"state": "   "}):
+        try:
+            asyncio.run(
+                main.update_incident_state(
+                    "INC-ANY",
+                    payload,
+                )
+            )
+        except HTTPException as exc:
+            assert exc.status_code == 400
+            assert exc.detail == "Incident state is required."
+        else:
+            raise AssertionError(
+                "Expected HTTPException was not raised."
+            )
+
+
+def test_incident_state_api_returns_404_for_unknown_incident(
+    tmp_path,
+    monkeypatch,
+):
+    import asyncio
+    import main
+    from fastapi import HTTPException
+
+    repository = main.IncidentRepository(
+        tmp_path / "state-404.db"
+    )
+
+    monkeypatch.setattr(
+        main,
+        "incident_repository",
+        repository,
+    )
+
+    try:
+        asyncio.run(
+            main.update_incident_state(
+                "INC-UNKNOWN",
+                {"state": "TRIAGED"},
+            )
+        )
+    except HTTPException as exc:
+        assert exc.status_code == 404
+        assert exc.detail == "Incident not found."
+    else:
+        raise AssertionError(
+            "Expected HTTPException was not raised."
+        )
+
+
+def test_incident_state_api_rejects_invalid_transition(
+    tmp_path,
+    monkeypatch,
+):
+    import asyncio
+    import main
+    from fastapi import HTTPException
+
+    repository = main.IncidentRepository(
+        tmp_path / "state-invalid.db"
+    )
+
+    monkeypatch.setattr(
+        main,
+        "incident_repository",
+        repository,
+    )
+
+    incident = main.build_incident(
+        {
+            "filename": "INVALID-STATE.eml",
+            "risk": {
+                "classification": "HIGH",
+            },
+        }
+    )
+    incident["retention"]["persisted"] = True
+    repository.save(incident)
+
+    try:
+        asyncio.run(
+            main.update_incident_state(
+                incident["incident_id"],
+                {"state": "CLOSED"},
+            )
+        )
+    except HTTPException as exc:
+        assert exc.status_code == 409
+        assert (
+            exc.detail
+            == "Invalid incident transition: NEW -> CLOSED"
+        )
+    else:
+        raise AssertionError(
+            "Expected HTTPException was not raised."
+        )
+
+    stored = repository.get(
+        incident["incident_id"]
+    )
+
+    assert stored is not None
+    assert stored["lifecycle"]["state"] == "NEW"
+
+
+def test_incident_state_api_returns_500_on_retrieval_failure(
+    monkeypatch,
+):
+    import asyncio
+    import main
+    from fastapi import HTTPException
+
+    class FailingGetRepository:
+        def get(self, incident_id):
+            raise RuntimeError(
+                "simulated retrieval failure"
+            )
+
+    monkeypatch.setattr(
+        main,
+        "incident_repository",
+        FailingGetRepository(),
+    )
+
+    try:
+        asyncio.run(
+            main.update_incident_state(
+                "INC-FAIL",
+                {"state": "TRIAGED"},
+            )
+        )
+    except HTTPException as exc:
+        assert exc.status_code == 500
+        assert exc.detail == "Incident retrieval failed."
+    else:
+        raise AssertionError(
+            "Expected HTTPException was not raised."
+        )
+
+
+def test_incident_state_api_returns_500_on_persistence_failure(
+    monkeypatch,
+):
+    import asyncio
+    import main
+    from fastapi import HTTPException
+
+    incident = main.build_incident(
+        {
+            "filename": "SAVE-FAIL.eml",
+            "risk": {
+                "classification": "HIGH",
+            },
+        }
+    )
+    incident["retention"]["persisted"] = True
+
+    class FailingSaveRepository:
+        def get(self, incident_id):
+            return incident
+
+        def save(self, updated_incident):
+            raise RuntimeError(
+                "simulated persistence failure"
+            )
+
+    monkeypatch.setattr(
+        main,
+        "incident_repository",
+        FailingSaveRepository(),
+    )
+
+    try:
+        asyncio.run(
+            main.update_incident_state(
+                incident["incident_id"],
+                {"state": "TRIAGED"},
+            )
+        )
+    except HTTPException as exc:
+        assert exc.status_code == 500
+        assert exc.detail == "Incident persistence failed."
+    else:
+        raise AssertionError(
+            "Expected HTTPException was not raised."
+        )

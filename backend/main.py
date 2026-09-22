@@ -1426,6 +1426,35 @@ async def get_incident(incident_id: str):
     return incident
 
 
+@app.get("/incidents/{incident_id}/events")
+async def get_incident_audit_events(
+    incident_id: str,
+):
+    try:
+        incident = incident_repository.get(incident_id)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Incident retrieval failed.",
+        ) from exc
+
+    if incident is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Incident not found.",
+        )
+
+    try:
+        return incident_repository.list_audit_events(
+            incident_id
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Incident audit retrieval failed.",
+        ) from exc
+
+
 @app.patch("/incidents/{incident_id}/assignment")
 async def update_incident_assignment(
     incident_id: str,

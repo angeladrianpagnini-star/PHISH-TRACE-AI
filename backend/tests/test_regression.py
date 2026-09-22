@@ -2954,3 +2954,235 @@ def test_incident_atomic_repository_commits_both_records(
     assert repository.list_audit_events(
         incident["incident_id"]
     ) == [event]
+
+
+def test_incident_timeline_api_returns_events(
+    tmp_path,
+    monkeypatch,
+):
+    import asyncio
+    import main
+
+    repository = main.IncidentRepository(
+        tmp_path / "timeline.db"
+    )
+
+    monkeypatch.setattr(
+        main,
+        "incident_repository",
+        repository,
+    )
+
+    incident = asyncio.run(
+        main.create_incident({})
+    )
+
+    asyncio.run(
+        main.update_incident_assignment(
+            incident["incident_id"],
+            {"assigned_to": "analyst-01"},
+        )
+    )
+
+    asyncio.run(
+        main.update_incident_state(
+            incident["incident_id"],
+            {"state": "TRIAGED"},
+        )
+    )
+
+    events = asyncio.run(
+        main.get_incident_audit_events(
+            incident["incident_id"]
+        )
+    )
+
+    assert [
+        event["event_type"]
+        for event in events
+    ] == [
+        "INCIDENT_CREATED",
+        "ASSIGNMENT_CHANGED",
+        "STATE_CHANGED",
+    ]
+
+
+def test_incident_timeline_api_returns_creation_event(
+    tmp_path,
+    monkeypatch,
+):
+    import asyncio
+    import main
+
+    repository = main.IncidentRepository(
+        tmp_path / "timeline-create.db"
+    )
+
+    monkeypatch.setattr(
+        main,
+        "incident_repository",
+        repository,
+    )
+
+    incident = asyncio.run(
+        main.create_incident({})
+    )
+
+    events = asyncio.run(
+        main.get_incident_audit_events(
+            incident["incident_id"]
+        )
+    )
+
+    assert len(events) == 1
+    assert events[0]["event_type"] == "INCIDENT_CREATED"
+    assert events[0]["incident_id"] == incident["incident_id"]
+
+
+def test_incident_timeline_api_returns_404_for_unknown_incident(
+    tmp_path,
+    monkeypatch,
+):
+    import asyncio
+    import main
+    from fastapi import HTTPException
+
+    repository = main.IncidentRepository(
+        tmp_path / "timeline-404.db"
+    )
+
+    monkeypatch.setattr(
+        main,
+        "incident_repository",
+        repository,
+    )
+
+    try:
+        asyncio.run(
+            main.get_incident_audit_events(
+                "INC-UNKNOWN"
+            )
+        )
+    except HTTPException as exc:
+        assert exc.status_code == 404
+        assert exc.detail == "Incident not found."
+    else:
+        raise AssertionError(
+            "Unknown incident must return 404."
+        )
+
+
+def test_incident_timeline_api_returns_500_on_incident_lookup_failure(
+    monkeypatch,
+):
+    import asyncio
+    import main
+    from fastapi import HTTPException
+
+    class FailingRepository:
+        def get(self, incident_id):
+            raise RuntimeError("lookup failed")
+
+    monkeypatch.setattr(
+        main,
+        "incident_repository",
+        FailingRepository(),
+    )
+
+    try:
+        asyncio.run(
+            main.get_incident_audit_events(
+                "INC-FAIL"
+            )
+        )
+    except HTTPException as exc:
+        assert exc.status_code == 500
+        assert exc.detail == "Incident retrieval failed."
+    else:
+        raise AssertionError(
+            "Incident lookup failure must return 500."
+        )
+
+
+def test_incident_timeline_api_returns_500_on_audit_failure(
+    monkeypatch,
+):
+    import asyncio
+    import main
+    from fastapi import HTTPException
+
+    class FailingRepository:
+        def get(self, incident_id):
+            return {
+                "incident_id": incident_id,
+            }
+
+        def list_audit_events(self, incident_id):
+            raise RuntimeError("audit retrieval failed")
+
+    monkeypatch.setattr(
+        main,
+        "incident_repository",
+        FailingRepository(),
+    )
+
+    try:
+        asyncio.run(
+            main.get_incident_audit_events(
+                "INC-FAIL"
+            )
+        )
+    except HTTPException as exc:
+        assert exc.status_code == 500
+        assert (
+            exc.detail
+            == "Incident audit retrieval failed."
+        )
+    else:
+        raise AssertionError(
+            "Audit retrieval failure must return 500."
+        )
+
+
+def test_incident_timeline_api_preserves_event_contract(
+    tmp_path,
+    monkeypatch,
+):
+    import asyncio
+    import main
+
+    repository = main.IncidentRepository(
+        tmp_path / "timeline-contract.db"
+    )
+
+    monkeypatch.setattr(
+        main,
+        "incident_repository",
+        repository,
+    )
+
+    incident = asyncio.run(
+        main.create_incident({})
+    )
+
+    events = asyncio.run(
+        main.get_incident_audit_events(
+            incident["incident_id"]
+        )
+    )
+
+    event = events[0]
+
+    assert set(event.keys()) == {
+        "schema_version",
+        "event_id",
+        "incident_id",
+        "event_type",
+        "created_at",
+        "actor",
+        "details",
+    }
+
+    assert event["schema_version"] == "1.0"
+    assert event["event_id"].startswith("EVT-")
+    assert event["actor"] is None

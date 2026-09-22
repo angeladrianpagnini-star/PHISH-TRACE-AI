@@ -2055,3 +2055,328 @@ def test_incident_state_api_returns_500_on_persistence_failure(
         raise AssertionError(
             "Expected HTTPException was not raised."
         )
+
+
+def test_incident_assignment_api_assigns_and_persists(
+    tmp_path,
+    monkeypatch,
+):
+    import asyncio
+    import main
+
+    repository = main.IncidentRepository(
+        tmp_path / "assignment.db"
+    )
+
+    monkeypatch.setattr(
+        main,
+        "incident_repository",
+        repository,
+    )
+
+    incident = main.build_incident(
+        {
+            "filename": "ASSIGN.eml",
+            "risk": {
+                "classification": "HIGH",
+            },
+        }
+    )
+    incident["retention"]["persisted"] = True
+    repository.save(incident)
+
+    original_updated_at = incident["updated_at"]
+
+    updated = asyncio.run(
+        main.update_incident_assignment(
+            incident["incident_id"],
+            {"assigned_to": "analyst-01"},
+        )
+    )
+
+    assert updated["ownership"] == {
+        "queue": "SOC",
+        "assigned_to": "analyst-01",
+    }
+    assert updated["updated_at"] >= original_updated_at
+
+    stored = repository.get(
+        incident["incident_id"]
+    )
+
+    assert stored == updated
+
+
+def test_incident_assignment_api_trims_assignee(
+    tmp_path,
+    monkeypatch,
+):
+    import asyncio
+    import main
+
+    repository = main.IncidentRepository(
+        tmp_path / "assignment-trim.db"
+    )
+
+    monkeypatch.setattr(
+        main,
+        "incident_repository",
+        repository,
+    )
+
+    incident = main.build_incident(
+        {
+            "filename": "TRIM.eml",
+            "risk": {
+                "classification": "HIGH",
+            },
+        }
+    )
+    incident["retention"]["persisted"] = True
+    repository.save(incident)
+
+    updated = asyncio.run(
+        main.update_incident_assignment(
+            incident["incident_id"],
+            {"assigned_to": "  analyst-02  "},
+        )
+    )
+
+    assert updated["ownership"]["assigned_to"] == "analyst-02"
+
+
+def test_incident_assignment_api_allows_unassignment(
+    tmp_path,
+    monkeypatch,
+):
+    import asyncio
+    import main
+
+    repository = main.IncidentRepository(
+        tmp_path / "unassignment.db"
+    )
+
+    monkeypatch.setattr(
+        main,
+        "incident_repository",
+        repository,
+    )
+
+    incident = main.build_incident(
+        {
+            "filename": "UNASSIGN.eml",
+            "risk": {
+                "classification": "HIGH",
+            },
+        }
+    )
+    incident["retention"]["persisted"] = True
+    incident["ownership"]["assigned_to"] = "analyst-01"
+    repository.save(incident)
+
+    updated = asyncio.run(
+        main.update_incident_assignment(
+            incident["incident_id"],
+            {"assigned_to": None},
+        )
+    )
+
+    assert updated["ownership"] == {
+        "queue": "SOC",
+        "assigned_to": None,
+    }
+
+    stored = repository.get(
+        incident["incident_id"]
+    )
+
+    assert stored["ownership"]["assigned_to"] is None
+
+
+def test_incident_assignment_api_requires_assigned_to(
+    tmp_path,
+    monkeypatch,
+):
+    import asyncio
+    import main
+    from fastapi import HTTPException
+
+    repository = main.IncidentRepository(
+        tmp_path / "assignment-required.db"
+    )
+
+    monkeypatch.setattr(
+        main,
+        "incident_repository",
+        repository,
+    )
+
+    try:
+        asyncio.run(
+            main.update_incident_assignment(
+                "INC-ANY",
+                {},
+            )
+        )
+    except HTTPException as exc:
+        assert exc.status_code == 400
+        assert exc.detail == "assigned_to is required."
+    else:
+        raise AssertionError(
+            "Expected HTTPException was not raised."
+        )
+
+
+def test_incident_assignment_api_rejects_invalid_assignee(
+    tmp_path,
+    monkeypatch,
+):
+    import asyncio
+    import main
+    from fastapi import HTTPException
+
+    repository = main.IncidentRepository(
+        tmp_path / "assignment-invalid.db"
+    )
+
+    monkeypatch.setattr(
+        main,
+        "incident_repository",
+        repository,
+    )
+
+    for assigned_to in ("", "   ", 123, True, []):
+        try:
+            asyncio.run(
+                main.update_incident_assignment(
+                    "INC-ANY",
+                    {"assigned_to": assigned_to},
+                )
+            )
+        except HTTPException as exc:
+            assert exc.status_code == 400
+            assert (
+                exc.detail
+                == "assigned_to must be a non-empty string or null."
+            )
+        else:
+            raise AssertionError(
+                "Expected HTTPException was not raised."
+            )
+
+
+def test_incident_assignment_api_returns_404_for_unknown_incident(
+    tmp_path,
+    monkeypatch,
+):
+    import asyncio
+    import main
+    from fastapi import HTTPException
+
+    repository = main.IncidentRepository(
+        tmp_path / "assignment-404.db"
+    )
+
+    monkeypatch.setattr(
+        main,
+        "incident_repository",
+        repository,
+    )
+
+    try:
+        asyncio.run(
+            main.update_incident_assignment(
+                "INC-UNKNOWN",
+                {"assigned_to": "analyst-01"},
+            )
+        )
+    except HTTPException as exc:
+        assert exc.status_code == 404
+        assert exc.detail == "Incident not found."
+    else:
+        raise AssertionError(
+            "Expected HTTPException was not raised."
+        )
+
+
+def test_incident_assignment_api_returns_500_on_retrieval_failure(
+    monkeypatch,
+):
+    import asyncio
+    import main
+    from fastapi import HTTPException
+
+    class FailingGetRepository:
+        def get(self, incident_id):
+            raise RuntimeError(
+                "simulated retrieval failure"
+            )
+
+    monkeypatch.setattr(
+        main,
+        "incident_repository",
+        FailingGetRepository(),
+    )
+
+    try:
+        asyncio.run(
+            main.update_incident_assignment(
+                "INC-FAIL",
+                {"assigned_to": "analyst-01"},
+            )
+        )
+    except HTTPException as exc:
+        assert exc.status_code == 500
+        assert exc.detail == "Incident retrieval failed."
+    else:
+        raise AssertionError(
+            "Expected HTTPException was not raised."
+        )
+
+
+def test_incident_assignment_api_returns_500_on_persistence_failure(
+    monkeypatch,
+):
+    import asyncio
+    import main
+    from fastapi import HTTPException
+
+    incident = main.build_incident(
+        {
+            "filename": "ASSIGN-SAVE-FAIL.eml",
+            "risk": {
+                "classification": "HIGH",
+            },
+        }
+    )
+    incident["retention"]["persisted"] = True
+
+    class FailingSaveRepository:
+        def get(self, incident_id):
+            return incident
+
+        def save(self, updated_incident):
+            raise RuntimeError(
+                "simulated persistence failure"
+            )
+
+    monkeypatch.setattr(
+        main,
+        "incident_repository",
+        FailingSaveRepository(),
+    )
+
+    try:
+        asyncio.run(
+            main.update_incident_assignment(
+                incident["incident_id"],
+                {"assigned_to": "analyst-01"},
+            )
+        )
+    except HTTPException as exc:
+        assert exc.status_code == 500
+        assert exc.detail == "Incident persistence failed."
+    else:
+        raise AssertionError(
+            "Expected HTTPException was not raised."
+        )

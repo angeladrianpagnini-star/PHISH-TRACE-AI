@@ -1212,6 +1212,65 @@ async def get_incident(incident_id: str):
     return incident
 
 
+@app.patch("/incidents/{incident_id}/assignment")
+async def update_incident_assignment(
+    incident_id: str,
+    payload: dict[str, Any],
+):
+    if "assigned_to" not in payload:
+        raise HTTPException(
+            status_code=400,
+            detail="assigned_to is required.",
+        )
+
+    assigned_to = payload["assigned_to"]
+
+    if assigned_to is not None:
+        if not isinstance(assigned_to, str) or not assigned_to.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="assigned_to must be a non-empty string or null.",
+            )
+
+        assigned_to = assigned_to.strip()
+
+    try:
+        incident = incident_repository.get(incident_id)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Incident retrieval failed.",
+        ) from exc
+
+    if incident is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Incident not found.",
+        )
+
+    updated_at = datetime.now(timezone.utc).isoformat()
+
+    updated_incident = {
+        **incident,
+        "updated_at": updated_at,
+        "ownership": {
+            **incident.get("ownership", {}),
+            "queue": "SOC",
+            "assigned_to": assigned_to,
+        },
+    }
+
+    try:
+        incident_repository.save(updated_incident)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Incident persistence failed.",
+        ) from exc
+
+    return updated_incident
+
+
 @app.patch("/incidents/{incident_id}/state")
 async def update_incident_state(
     incident_id: str,

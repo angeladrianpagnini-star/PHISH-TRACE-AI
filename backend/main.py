@@ -1073,6 +1073,95 @@ class IncidentRepository:
             for row in rows
         ]
 
+    def save_with_audit_event(
+        self,
+        incident: dict[str, Any],
+        event: dict[str, Any],
+    ) -> dict[str, Any]:
+        incident_payload = json.dumps(
+            incident,
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+
+        event_payload = json.dumps(
+            event,
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+
+        if event["incident_id"] != incident["incident_id"]:
+            raise ValueError(
+                "Audit event incident_id does not match incident."
+            )
+
+        with closing(self._connect()) as connection:
+            try:
+                connection.execute("BEGIN")
+
+                connection.execute(
+                    """
+                    INSERT INTO incidents (
+                        incident_id,
+                        created_at,
+                        updated_at,
+                        status,
+                        severity,
+                        priority,
+                        lifecycle_state,
+                        incident_json
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(incident_id) DO UPDATE SET
+                        updated_at = excluded.updated_at,
+                        status = excluded.status,
+                        severity = excluded.severity,
+                        priority = excluded.priority,
+                        lifecycle_state = excluded.lifecycle_state,
+                        incident_json = excluded.incident_json
+                    """,
+                    (
+                        incident["incident_id"],
+                        incident["created_at"],
+                        incident["updated_at"],
+                        incident["status"],
+                        incident["severity"],
+                        incident["priority"],
+                        incident["lifecycle"]["state"],
+                        incident_payload,
+                    ),
+                )
+
+                connection.execute(
+                    """
+                    INSERT INTO incident_audit_events (
+                        event_id,
+                        incident_id,
+                        event_type,
+                        created_at,
+                        actor,
+                        event_json
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        event["event_id"],
+                        event["incident_id"],
+                        event["event_type"],
+                        event["created_at"],
+                        event.get("actor"),
+                        event_payload,
+                    ),
+                )
+
+                connection.commit()
+
+            except Exception:
+                connection.rollback()
+                raise
+
+        return incident
+
     def append_audit_event(
         self,
         event: dict[str, Any],
@@ -1282,8 +1371,22 @@ async def create_incident(analysis: dict[str, Any]):
 
     incident["retention"]["persisted"] = True
 
+    audit_event = build_incident_audit_event(
+        incident["incident_id"],
+        "INCIDENT_CREATED",
+        {
+            "status": incident["status"],
+            "state": incident["lifecycle"]["state"],
+            "severity": incident["severity"],
+            "priority": incident["priority"],
+        },
+    )
+
     try:
-        incident_repository.save(incident)
+        incident_repository.save_with_audit_event(
+            incident,
+            audit_event,
+        )
     except Exception as exc:
         raise HTTPException(
             status_code=500,
@@ -1360,6 +1463,10 @@ async def update_incident_assignment(
         )
 
     updated_at = datetime.now(timezone.utc).isoformat()
+    previous_assignee = incident.get(
+        "ownership",
+        {},
+    ).get("assigned_to")
 
     updated_incident = {
         **incident,
@@ -1371,8 +1478,21 @@ async def update_incident_assignment(
         },
     }
 
+    audit_event = build_incident_audit_event(
+        incident_id,
+        "ASSIGNMENT_CHANGED",
+        {
+            "from": previous_assignee,
+            "to": assigned_to,
+            "queue": "SOC",
+        },
+    )
+
     try:
-        incident_repository.save(updated_incident)
+        incident_repository.save_with_audit_event(
+            updated_incident,
+            audit_event,
+        )
     except Exception as exc:
         raise HTTPException(
             status_code=500,
@@ -1409,6 +1529,11 @@ async def update_incident_state(
             detail="Incident not found.",
         )
 
+    previous_state = incident.get(
+        "lifecycle",
+        {},
+    ).get("state")
+
     try:
         updated_incident = transition_incident(
             incident,
@@ -1420,8 +1545,21 @@ async def update_incident_state(
             detail=str(exc),
         ) from exc
 
+    audit_event = build_incident_audit_event(
+        incident_id,
+        "STATE_CHANGED",
+        {
+            "from": previous_state,
+            "to": updated_incident["lifecycle"]["state"],
+            "status": updated_incident["status"],
+        },
+    )
+
     try:
-        incident_repository.save(updated_incident)
+        incident_repository.save_with_audit_event(
+            updated_incident,
+            audit_event,
+        )
     except Exception as exc:
         raise HTTPException(
             status_code=500,

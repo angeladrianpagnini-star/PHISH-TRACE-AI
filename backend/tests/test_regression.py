@@ -2576,3 +2576,381 @@ def test_incident_audit_repository_survives_reinstantiation(
     )
 
     assert events == [event]
+
+
+def test_incident_atomic_audit_create(
+    tmp_path,
+    monkeypatch,
+):
+    import asyncio
+    import main
+
+    repository = main.IncidentRepository(
+        tmp_path / "atomic-create.db"
+    )
+
+    monkeypatch.setattr(
+        main,
+        "incident_repository",
+        repository,
+    )
+
+    analysis = {
+        "filename": "atomic.eml",
+        "sha256": "abc123",
+        "message_id": "<atomic@example.test>",
+        "risk": {
+            "score": 75,
+            "classification": "CRITICAL",
+            "confidence": "HIGH",
+            "scoring_version": "1.2",
+        },
+    }
+
+    incident = asyncio.run(
+        main.create_incident(analysis)
+    )
+
+    stored = repository.get(
+        incident["incident_id"]
+    )
+
+    events = repository.list_audit_events(
+        incident["incident_id"]
+    )
+
+    assert stored == incident
+    assert len(events) == 1
+    assert events[0]["event_type"] == "INCIDENT_CREATED"
+    assert events[0]["actor"] is None
+    assert events[0]["details"] == {
+        "status": "OPEN",
+        "state": "NEW",
+        "severity": "CRITICAL",
+        "priority": "P1",
+    }
+
+
+def test_incident_atomic_audit_assignment(
+    tmp_path,
+    monkeypatch,
+):
+    import asyncio
+    import main
+
+    repository = main.IncidentRepository(
+        tmp_path / "atomic-assignment.db"
+    )
+
+    monkeypatch.setattr(
+        main,
+        "incident_repository",
+        repository,
+    )
+
+    incident = main.build_incident({})
+    incident["retention"]["persisted"] = True
+    repository.save(incident)
+
+    updated = asyncio.run(
+        main.update_incident_assignment(
+            incident["incident_id"],
+            {"assigned_to": "analyst-01"},
+        )
+    )
+
+    stored = repository.get(
+        incident["incident_id"]
+    )
+
+    events = repository.list_audit_events(
+        incident["incident_id"]
+    )
+
+    assert stored == updated
+    assert updated["ownership"]["assigned_to"] == "analyst-01"
+    assert len(events) == 1
+    assert events[0]["event_type"] == "ASSIGNMENT_CHANGED"
+    assert events[0]["details"] == {
+        "from": None,
+        "to": "analyst-01",
+        "queue": "SOC",
+    }
+
+
+def test_incident_atomic_audit_unassignment(
+    tmp_path,
+    monkeypatch,
+):
+    import asyncio
+    import main
+
+    repository = main.IncidentRepository(
+        tmp_path / "atomic-unassignment.db"
+    )
+
+    monkeypatch.setattr(
+        main,
+        "incident_repository",
+        repository,
+    )
+
+    incident = main.build_incident({})
+    incident["ownership"]["assigned_to"] = "analyst-01"
+    incident["retention"]["persisted"] = True
+    repository.save(incident)
+
+    updated = asyncio.run(
+        main.update_incident_assignment(
+            incident["incident_id"],
+            {"assigned_to": None},
+        )
+    )
+
+    events = repository.list_audit_events(
+        incident["incident_id"]
+    )
+
+    assert updated["ownership"]["assigned_to"] is None
+    assert len(events) == 1
+    assert events[0]["event_type"] == "ASSIGNMENT_CHANGED"
+    assert events[0]["details"]["from"] == "analyst-01"
+    assert events[0]["details"]["to"] is None
+
+
+def test_incident_atomic_audit_state_change(
+    tmp_path,
+    monkeypatch,
+):
+    import asyncio
+    import main
+
+    repository = main.IncidentRepository(
+        tmp_path / "atomic-state.db"
+    )
+
+    monkeypatch.setattr(
+        main,
+        "incident_repository",
+        repository,
+    )
+
+    incident = main.build_incident({})
+    incident["retention"]["persisted"] = True
+    repository.save(incident)
+
+    updated = asyncio.run(
+        main.update_incident_state(
+            incident["incident_id"],
+            {"state": "TRIAGED"},
+        )
+    )
+
+    stored = repository.get(
+        incident["incident_id"]
+    )
+
+    events = repository.list_audit_events(
+        incident["incident_id"]
+    )
+
+    assert stored == updated
+    assert updated["lifecycle"]["state"] == "TRIAGED"
+    assert len(events) == 1
+    assert events[0]["event_type"] == "STATE_CHANGED"
+    assert events[0]["details"] == {
+        "from": "NEW",
+        "to": "TRIAGED",
+        "status": "OPEN",
+    }
+
+
+def test_incident_atomic_audit_accumulates_history(
+    tmp_path,
+    monkeypatch,
+):
+    import asyncio
+    import main
+
+    repository = main.IncidentRepository(
+        tmp_path / "atomic-history.db"
+    )
+
+    monkeypatch.setattr(
+        main,
+        "incident_repository",
+        repository,
+    )
+
+    incident = asyncio.run(
+        main.create_incident({})
+    )
+
+    asyncio.run(
+        main.update_incident_assignment(
+            incident["incident_id"],
+            {"assigned_to": "analyst-01"},
+        )
+    )
+
+    asyncio.run(
+        main.update_incident_state(
+            incident["incident_id"],
+            {"state": "TRIAGED"},
+        )
+    )
+
+    events = repository.list_audit_events(
+        incident["incident_id"]
+    )
+
+    assert [
+        event["event_type"]
+        for event in events
+    ] == [
+        "INCIDENT_CREATED",
+        "ASSIGNMENT_CHANGED",
+        "STATE_CHANGED",
+    ]
+
+
+def test_incident_atomic_repository_rejects_mismatched_event(
+    tmp_path,
+):
+    import main
+
+    repository = main.IncidentRepository(
+        tmp_path / "atomic-mismatch.db"
+    )
+
+    incident = main.build_incident({})
+
+    event = main.build_incident_audit_event(
+        "INC-DIFFERENT",
+        "INCIDENT_CREATED",
+        {},
+    )
+
+    try:
+        repository.save_with_audit_event(
+            incident,
+            event,
+        )
+    except ValueError:
+        pass
+    else:
+        raise AssertionError(
+            "Mismatched audit event must be rejected."
+        )
+
+    assert repository.get(
+        incident["incident_id"]
+    ) is None
+
+    assert repository.list_audit_events(
+        incident["incident_id"]
+    ) == []
+
+
+def test_incident_atomic_repository_rolls_back_on_audit_failure(
+    tmp_path,
+):
+    import sqlite3
+    import main
+
+    repository = main.IncidentRepository(
+        tmp_path / "atomic-rollback.db"
+    )
+
+    incident = main.build_incident({})
+    incident["ownership"]["assigned_to"] = None
+
+    first_event = main.build_incident_audit_event(
+        incident["incident_id"],
+        "INCIDENT_CREATED",
+        {},
+    )
+
+    repository.save_with_audit_event(
+        incident,
+        first_event,
+    )
+
+    original = repository.get(
+        incident["incident_id"]
+    )
+
+    updated = {
+        **original,
+        "ownership": {
+            **original["ownership"],
+            "assigned_to": "analyst-rollback",
+        },
+    }
+
+    duplicate_event = {
+        **main.build_incident_audit_event(
+            incident["incident_id"],
+            "ASSIGNMENT_CHANGED",
+            {
+                "from": None,
+                "to": "analyst-rollback",
+            },
+        ),
+        "event_id": first_event["event_id"],
+    }
+
+    try:
+        repository.save_with_audit_event(
+            updated,
+            duplicate_event,
+        )
+    except sqlite3.IntegrityError:
+        pass
+    else:
+        raise AssertionError(
+            "Duplicate event must fail transaction."
+        )
+
+    stored_after_failure = repository.get(
+        incident["incident_id"]
+    )
+
+    events_after_failure = repository.list_audit_events(
+        incident["incident_id"]
+    )
+
+    assert stored_after_failure == original
+    assert len(events_after_failure) == 1
+    assert events_after_failure[0] == first_event
+
+
+def test_incident_atomic_repository_commits_both_records(
+    tmp_path,
+):
+    import main
+
+    repository = main.IncidentRepository(
+        tmp_path / "atomic-commit.db"
+    )
+
+    incident = main.build_incident({})
+
+    event = main.build_incident_audit_event(
+        incident["incident_id"],
+        "INCIDENT_CREATED",
+        {"state": "NEW"},
+    )
+
+    repository.save_with_audit_event(
+        incident,
+        event,
+    )
+
+    assert repository.get(
+        incident["incident_id"]
+    ) == incident
+
+    assert repository.list_audit_events(
+        incident["incident_id"]
+    ) == [event]

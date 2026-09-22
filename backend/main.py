@@ -935,6 +935,57 @@ async def correlate(payload: dict[str, Any]):
 
     return correlate_analyses(analysis_a, analysis_b)
 
+INCIDENT_LIFECYCLE_TRANSITIONS = {
+    "NEW": {"TRIAGED"},
+    "TRIAGED": {"IN_PROGRESS", "RESOLVED"},
+    "IN_PROGRESS": {"RESOLVED"},
+    "RESOLVED": {"CLOSED"},
+    "CLOSED": set(),
+}
+
+
+def transition_incident(
+    incident: dict[str, Any],
+    target_state: str,
+) -> dict[str, Any]:
+    current_state = str(
+        incident.get("lifecycle", {}).get("state", "")
+    ).upper()
+    target_state = str(target_state).upper()
+
+    if current_state not in INCIDENT_LIFECYCLE_TRANSITIONS:
+        raise ValueError(
+            f"Unknown incident lifecycle state: {current_state}"
+        )
+
+    allowed = INCIDENT_LIFECYCLE_TRANSITIONS[current_state]
+
+    if target_state not in allowed:
+        raise ValueError(
+            f"Invalid incident transition: "
+            f"{current_state} -> {target_state}"
+        )
+
+    updated_at = datetime.now(timezone.utc).isoformat()
+
+    updated_incident = {
+        **incident,
+        "updated_at": updated_at,
+        "lifecycle": {
+            **incident.get("lifecycle", {}),
+            "state": target_state,
+        },
+    }
+
+    if target_state == "CLOSED":
+        updated_incident["status"] = "CLOSED"
+        updated_incident["lifecycle"]["closed_at"] = updated_at
+    else:
+        updated_incident["status"] = "OPEN"
+
+    return updated_incident
+
+
 INCIDENT_PRIORITY_BY_SEVERITY = {
     "CRITICAL": "P1",
     "HIGH": "P2",

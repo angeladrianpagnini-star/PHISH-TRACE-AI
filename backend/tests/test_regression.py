@@ -1196,3 +1196,135 @@ def test_incident_without_risk_uses_safe_defaults():
     assert result["risk"]["classification"] == "LOW"
     assert result["risk"]["confidence"] == "LOW"
     assert result["risk"]["scoring_version"] is None
+
+
+def test_incident_lifecycle_full_transition_path():
+    from main import build_incident, transition_incident
+
+    incident = build_incident(
+        {
+            "filename": "LIFECYCLE.eml",
+            "sha256": "d" * 64,
+            "message_id": "<lifecycle@example.com>",
+            "risk": {
+                "score": 75,
+                "classification": "CRITICAL",
+                "confidence": "HIGH",
+                "scoring_version": "1.2",
+            },
+        }
+    )
+
+    triaged = transition_incident(incident, "TRIAGED")
+    in_progress = transition_incident(triaged, "IN_PROGRESS")
+    resolved = transition_incident(in_progress, "RESOLVED")
+    closed = transition_incident(resolved, "CLOSED")
+
+    assert triaged["lifecycle"]["state"] == "TRIAGED"
+    assert in_progress["lifecycle"]["state"] == "IN_PROGRESS"
+    assert resolved["lifecycle"]["state"] == "RESOLVED"
+    assert closed["lifecycle"]["state"] == "CLOSED"
+
+    assert triaged["status"] == "OPEN"
+    assert in_progress["status"] == "OPEN"
+    assert resolved["status"] == "OPEN"
+    assert closed["status"] == "CLOSED"
+
+    assert closed["lifecycle"]["closed_at"] is not None
+    assert closed["lifecycle"]["closed_at"] == closed["updated_at"]
+
+
+def test_incident_lifecycle_allows_triaged_to_resolved():
+    from main import build_incident, transition_incident
+
+    incident = build_incident({"risk": {"classification": "HIGH"}})
+    triaged = transition_incident(incident, "TRIAGED")
+    resolved = transition_incident(triaged, "RESOLVED")
+
+    assert resolved["lifecycle"]["state"] == "RESOLVED"
+    assert resolved["status"] == "OPEN"
+    assert resolved["lifecycle"]["closed_at"] is None
+
+
+def test_incident_lifecycle_rejects_invalid_transition():
+    import pytest
+
+    from main import build_incident, transition_incident
+
+    incident = build_incident({"risk": {"classification": "LOW"}})
+
+    with pytest.raises(
+        ValueError,
+        match="Invalid incident transition: NEW -> RESOLVED",
+    ):
+        transition_incident(incident, "RESOLVED")
+
+
+def test_incident_lifecycle_closed_is_terminal():
+    import pytest
+
+    from main import build_incident, transition_incident
+
+    incident = build_incident({})
+    triaged = transition_incident(incident, "TRIAGED")
+    resolved = transition_incident(triaged, "RESOLVED")
+    closed = transition_incident(resolved, "CLOSED")
+
+    with pytest.raises(
+        ValueError,
+        match="Invalid incident transition: CLOSED -> TRIAGED",
+    ):
+        transition_incident(closed, "TRIAGED")
+
+
+def test_incident_lifecycle_rejects_unknown_current_state():
+    import pytest
+
+    from main import transition_incident
+
+    incident = {
+        "status": "OPEN",
+        "lifecycle": {
+            "state": "UNKNOWN_STATE",
+            "closed_at": None,
+        },
+    }
+
+    with pytest.raises(
+        ValueError,
+        match="Unknown incident lifecycle state: UNKNOWN_STATE",
+    ):
+        transition_incident(incident, "TRIAGED")
+
+
+def test_incident_lifecycle_normalizes_target_state():
+    from main import build_incident, transition_incident
+
+    incident = build_incident({})
+    updated = transition_incident(incident, "triaged")
+
+    assert updated["lifecycle"]["state"] == "TRIAGED"
+
+
+def test_incident_transition_preserves_original_record():
+    from main import build_incident, transition_incident
+
+    incident = build_incident(
+        {
+            "filename": "IMMUTABLE.eml",
+            "sha256": "e" * 64,
+            "message_id": "<immutable@example.com>",
+        }
+    )
+
+    original_evidence = incident["evidence"]
+    updated = transition_incident(incident, "TRIAGED")
+
+    assert incident["lifecycle"]["state"] == "NEW"
+    assert incident["status"] == "OPEN"
+    assert incident["lifecycle"]["closed_at"] is None
+
+    assert updated["incident_id"] == incident["incident_id"]
+    assert updated["created_at"] == incident["created_at"]
+    assert updated["evidence"] == original_evidence
+    assert updated["evidence"] is incident["evidence"]

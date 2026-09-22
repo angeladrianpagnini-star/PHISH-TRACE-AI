@@ -4,6 +4,7 @@ import { ChangeEvent, useEffect, useState } from "react";
 import ThreatGraph from "../components/ThreatGraph";
 import RemediationActors from "../components/RemediationActors";
 import IncidentSocPanel, { IncidentSocRecord } from "../components/IncidentSocPanel";
+import IncidentSocActions from "../components/IncidentSocActions";
 import IncidentRegistry from "../components/IncidentRegistry";
 
 type HealthResponse = {
@@ -108,6 +109,7 @@ export default function Home() {
   const [incidents, setIncidents] =
     useState<IncidentResult[]>([]);
   const [loadingIncidents, setLoadingIncidents] = useState(false);
+  const [updatingIncident, setUpdatingIncident] = useState(false);
   const [correlationBaseline, setCorrelationBaseline] =
     useState<AnalysisResult | null>(null);
   const [correlation, setCorrelation] =
@@ -345,6 +347,102 @@ export default function Home() {
       );
     } finally {
       setLoadingIncidents(false);
+    }
+  }
+
+  function syncIncident(updatedIncident: IncidentResult) {
+    setIncident(updatedIncident);
+
+    setIncidents((currentIncidents) =>
+      currentIncidents.map((currentIncident) =>
+        currentIncident.incident_id === updatedIncident.incident_id
+          ? updatedIncident
+          : currentIncident
+      )
+    );
+  }
+
+  async function assignIncident(
+    assignedTo: string | null
+  ) {
+    if (!incident) return;
+
+    setUpdatingIncident(true);
+    setError("");
+
+    try {
+      const response = await fetch(
+        `${apiBase}/incidents/${incident.incident_id}/assignment`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            assigned_to: assignedTo,
+          }),
+        }
+      );
+
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          payload.detail || "Incident assignment failed."
+        );
+      }
+
+      syncIncident(payload);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unexpected incident assignment error."
+      );
+    } finally {
+      setUpdatingIncident(false);
+    }
+  }
+
+  async function transitionIncident(
+    targetState: string
+  ) {
+    if (!incident) return;
+
+    setUpdatingIncident(true);
+    setError("");
+
+    try {
+      const response = await fetch(
+        `${apiBase}/incidents/${incident.incident_id}/state`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            state: targetState,
+          }),
+        }
+      );
+
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          payload.detail || "Incident state transition failed."
+        );
+      }
+
+      syncIncident(payload);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unexpected incident state error."
+      );
+    } finally {
+      setUpdatingIncident(false);
     }
   }
 
@@ -1187,10 +1285,20 @@ export default function Home() {
                   </button>
                 </>
               ) : (
-                <IncidentSocPanel
-                  incident={incident}
-                  onExport={exportIncidentJson}
-                />
+                <>
+                  <IncidentSocPanel
+                    incident={incident}
+                    onExport={exportIncidentJson}
+                  />
+
+                  <IncidentSocActions
+                    key={`${incident.incident_id}:${incident.updated_at}`}
+                    incident={incident}
+                    busy={updatingIncident}
+                    onAssign={assignIncident}
+                    onTransition={transitionIncident}
+                  />
+                </>
               )}
             </div>
 

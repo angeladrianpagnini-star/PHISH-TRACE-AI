@@ -4,6 +4,7 @@ import { ChangeEvent, useEffect, useState } from "react";
 import ThreatGraph from "../components/ThreatGraph";
 import RemediationActors from "../components/RemediationActors";
 import IncidentSocPanel, { IncidentSocRecord } from "../components/IncidentSocPanel";
+import IncidentRegistry from "../components/IncidentRegistry";
 
 type HealthResponse = {
   status: string;
@@ -104,6 +105,9 @@ export default function Home() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [incident, setIncident] = useState<IncidentResult | null>(null);
+  const [incidents, setIncidents] =
+    useState<IncidentResult[]>([]);
+  const [loadingIncidents, setLoadingIncidents] = useState(false);
   const [correlationBaseline, setCorrelationBaseline] =
     useState<AnalysisResult | null>(null);
   const [correlation, setCorrelation] =
@@ -318,6 +322,32 @@ export default function Home() {
     }
   }
 
+  async function loadIncidents() {
+    setLoadingIncidents(true);
+    setError("");
+
+    try {
+      const response = await fetch(`${apiBase}/incidents`);
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          payload.detail || "Incident registry retrieval failed."
+        );
+      }
+
+      setIncidents(payload);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unexpected incident registry error."
+      );
+    } finally {
+      setLoadingIncidents(false);
+    }
+  }
+
   async function createIncident() {
     if (!analysis) {
       setError("Analyze an email before creating an incident.");
@@ -343,6 +373,7 @@ export default function Home() {
       }
 
       setIncident(payload);
+      await loadIncidents();
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Unexpected incident error."
@@ -383,6 +414,17 @@ export default function Home() {
       }}
     >
       <div style={{ maxWidth: "1050px", margin: "0 auto" }}>
+        <IncidentRegistry
+          incidents={incidents}
+          selectedIncidentId={incident?.incident_id ?? null}
+          loading={loadingIncidents}
+          onSelect={(selectedIncident) => {
+            setIncident(selectedIncident);
+            setAnalysis(selectedIncident.evidence);
+            setError("");
+          }}
+          onRefresh={loadIncidents}
+        />
         <p
           style={{
             color: "#22d3ee",

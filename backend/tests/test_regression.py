@@ -1058,3 +1058,141 @@ def test_no_relationship_has_no_campaign_id():
 
     assert result["relationship"] == "NO_TECHNICAL_RELATIONSHIP"
     assert result["campaign_id"] is None
+
+
+def test_incident_data_model_preserves_legacy_contract():
+    from main import build_incident
+
+    analysis = {
+        "filename": "INCIDENT-TEST.eml",
+        "sha256": "a" * 64,
+        "message_id": "<incident-test@example.com>",
+        "risk": {
+            "score": 82,
+            "classification": "CRITICAL",
+            "confidence": "HIGH",
+            "scoring_version": "1.2",
+        },
+    }
+
+    result = build_incident(analysis)
+
+    assert result["incident_id"].startswith("INC-")
+    assert result["created_at"]
+    assert result["status"] == "OPEN"
+    assert result["retention"] == {
+        "mode": "explicit",
+        "persisted": False,
+    }
+    assert result["evidence"] == analysis
+
+
+def test_incident_data_model_adds_soc_fields():
+    from main import build_incident
+
+    analysis = {
+        "filename": "SOC-TEST.eml",
+        "sha256": "b" * 64,
+        "message_id": "<soc-test@example.com>",
+        "risk": {
+            "score": 82,
+            "classification": "CRITICAL",
+            "confidence": "HIGH",
+            "scoring_version": "1.2",
+        },
+    }
+
+    result = build_incident(analysis)
+
+    assert result["schema_version"] == "1.0"
+    assert result["updated_at"] == result["created_at"]
+    assert result["incident_type"] == "PHISHING_EMAIL"
+
+    assert result["severity"] == "CRITICAL"
+    assert result["priority"] == "P1"
+
+    assert result["lifecycle"] == {
+        "state": "NEW",
+        "closed_at": None,
+    }
+
+    assert result["ownership"] == {
+        "queue": "SOC",
+        "assigned_to": None,
+    }
+
+    assert result["risk"] == {
+        "score": 82,
+        "classification": "CRITICAL",
+        "confidence": "HIGH",
+        "scoring_version": "1.2",
+    }
+
+    assert result["evidence_metadata"] == {
+        "filename": "SOC-TEST.eml",
+        "sha256": "b" * 64,
+        "message_id": "<soc-test@example.com>",
+    }
+
+
+def test_incident_priority_mapping():
+    from main import build_incident
+
+    expected = {
+        "CRITICAL": "P1",
+        "HIGH": "P2",
+        "SUSPICIOUS": "P3",
+        "LOW": "P4",
+    }
+
+    for severity, priority in expected.items():
+        result = build_incident(
+            {
+                "risk": {
+                    "score": 50,
+                    "classification": severity,
+                    "confidence": "MEDIUM",
+                    "scoring_version": "1.2",
+                }
+            }
+        )
+
+        assert result["severity"] == severity
+        assert result["priority"] == priority
+
+
+def test_incident_unknown_severity_falls_back_to_low():
+    from main import build_incident
+
+    result = build_incident(
+        {
+            "risk": {
+                "score": 0,
+                "classification": "UNKNOWN_VALUE",
+                "confidence": "LOW",
+                "scoring_version": "1.2",
+            }
+        }
+    )
+
+    assert result["severity"] == "LOW"
+    assert result["priority"] == "P4"
+
+
+def test_incident_without_risk_uses_safe_defaults():
+    from main import build_incident
+
+    analysis = {
+        "filename": "NO-RISK.eml",
+        "sha256": "c" * 64,
+        "message_id": "<no-risk@example.com>",
+    }
+
+    result = build_incident(analysis)
+
+    assert result["severity"] == "LOW"
+    assert result["priority"] == "P4"
+    assert result["risk"]["score"] == 0
+    assert result["risk"]["classification"] == "LOW"
+    assert result["risk"]["confidence"] == "LOW"
+    assert result["risk"]["scoring_version"] is None

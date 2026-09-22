@@ -935,8 +935,15 @@ async def correlate(payload: dict[str, Any]):
 
     return correlate_analyses(analysis_a, analysis_b)
 
-@app.post("/incidents")
-async def create_incident(analysis: dict[str, Any]):
+INCIDENT_PRIORITY_BY_SEVERITY = {
+    "CRITICAL": "P1",
+    "HIGH": "P2",
+    "SUSPICIOUS": "P3",
+    "LOW": "P4",
+}
+
+
+def build_incident(analysis: dict[str, Any]) -> dict[str, Any]:
     created_at = datetime.now(timezone.utc)
 
     incident_id = (
@@ -944,16 +951,53 @@ async def create_incident(analysis: dict[str, Any]):
         f"{secrets.token_hex(4).upper()}"
     )
 
+    risk = analysis.get("risk", {})
+    severity = str(
+        risk.get("classification", "LOW")
+    ).upper()
+
+    if severity not in INCIDENT_PRIORITY_BY_SEVERITY:
+        severity = "LOW"
+
     return {
+        "schema_version": "1.0",
         "incident_id": incident_id,
         "created_at": created_at.isoformat(),
+        "updated_at": created_at.isoformat(),
         "status": "OPEN",
+        "incident_type": "PHISHING_EMAIL",
+        "severity": severity,
+        "priority": INCIDENT_PRIORITY_BY_SEVERITY[severity],
+        "lifecycle": {
+            "state": "NEW",
+            "closed_at": None,
+        },
+        "ownership": {
+            "queue": "SOC",
+            "assigned_to": None,
+        },
+        "risk": {
+            "score": risk.get("score", 0),
+            "classification": severity,
+            "confidence": risk.get("confidence", "LOW"),
+            "scoring_version": risk.get("scoring_version"),
+        },
+        "evidence_metadata": {
+            "filename": analysis.get("filename"),
+            "sha256": analysis.get("sha256"),
+            "message_id": analysis.get("message_id"),
+        },
         "retention": {
             "mode": "explicit",
             "persisted": False,
         },
         "evidence": analysis,
     }
+
+
+@app.post("/incidents")
+async def create_incident(analysis: dict[str, Any]):
+    return build_incident(analysis)
 
 
 @app.post("/analyze")

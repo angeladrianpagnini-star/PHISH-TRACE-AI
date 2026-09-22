@@ -5,6 +5,9 @@ import ThreatGraph from "../components/ThreatGraph";
 import RemediationActors from "../components/RemediationActors";
 import IncidentSocPanel, { IncidentSocRecord } from "../components/IncidentSocPanel";
 import IncidentSocActions from "../components/IncidentSocActions";
+import IncidentAuditTimeline, {
+  IncidentAuditEvent,
+} from "../components/IncidentAuditTimeline";
 import IncidentRegistry from "../components/IncidentRegistry";
 
 type HealthResponse = {
@@ -110,6 +113,10 @@ export default function Home() {
     useState<IncidentResult[]>([]);
   const [loadingIncidents, setLoadingIncidents] = useState(false);
   const [updatingIncident, setUpdatingIncident] = useState(false);
+  const [incidentEvents, setIncidentEvents] =
+    useState<IncidentAuditEvent[]>([]);
+  const [loadingIncidentEvents, setLoadingIncidentEvents] =
+    useState(false);
   const [correlationBaseline, setCorrelationBaseline] =
     useState<AnalysisResult | null>(null);
   const [correlation, setCorrelation] =
@@ -350,6 +357,45 @@ export default function Home() {
     }
   }
 
+  async function loadIncidentEvents(
+    incidentId: string
+  ) {
+    setLoadingIncidentEvents(true);
+    setError("");
+
+    try {
+      const response = await fetch(
+        `${apiBase}/incidents/${incidentId}/events`
+      );
+
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          payload.detail ||
+            "Incident audit timeline retrieval failed."
+        );
+      }
+
+      if (!Array.isArray(payload)) {
+        throw new Error(
+          "Incident audit timeline returned an invalid response."
+        );
+      }
+
+      setIncidentEvents(payload);
+    } catch (err) {
+      setIncidentEvents([]);
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unexpected incident audit timeline error."
+      );
+    } finally {
+      setLoadingIncidentEvents(false);
+    }
+  }
+
   function syncIncident(updatedIncident: IncidentResult) {
     setIncident(updatedIncident);
 
@@ -393,6 +439,7 @@ export default function Home() {
       }
 
       syncIncident(payload);
+      await loadIncidentEvents(payload.incident_id);
     } catch (err) {
       setError(
         err instanceof Error
@@ -435,6 +482,7 @@ export default function Home() {
       }
 
       syncIncident(payload);
+      await loadIncidentEvents(payload.incident_id);
     } catch (err) {
       setError(
         err instanceof Error
@@ -472,6 +520,7 @@ export default function Home() {
 
       setIncident(payload);
       await loadIncidents();
+      await loadIncidentEvents(payload.incident_id);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Unexpected incident error."
@@ -519,7 +568,11 @@ export default function Home() {
           onSelect={(selectedIncident) => {
             setIncident(selectedIncident);
             setAnalysis(selectedIncident.evidence);
+            setIncidentEvents([]);
             setError("");
+            void loadIncidentEvents(
+              selectedIncident.incident_id
+            );
           }}
           onRefresh={loadIncidents}
         />
@@ -1297,6 +1350,16 @@ export default function Home() {
                     busy={updatingIncident}
                     onAssign={assignIncident}
                     onTransition={transitionIncident}
+                  />
+
+                  <IncidentAuditTimeline
+                    events={incidentEvents}
+                    loading={loadingIncidentEvents}
+                    onRefresh={() =>
+                      loadIncidentEvents(
+                        incident.incident_id
+                      )
+                    }
                   />
                 </>
               )}

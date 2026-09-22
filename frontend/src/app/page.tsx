@@ -730,8 +730,10 @@ export default function Home() {
 
               {analysis.risk.reasons.length > 0 ? (
                 <ul style={{ lineHeight: 1.8 }}>
-                  {analysis.risk.reasons.map((item) => (
-                    <li key={item.finding}>
+                  {analysis.risk.reasons.map((item, index) => (
+                    <li
+                      key={`${item.finding}:${item.reason}:${index}`}
+                    >
                       <strong>+{item.weight}</strong> — {item.reason}
                     </li>
                   ))}

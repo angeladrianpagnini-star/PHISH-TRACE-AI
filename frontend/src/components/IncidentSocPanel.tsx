@@ -41,6 +41,8 @@ export default function IncidentSocPanel({
   incident,
   onExport,
 }: IncidentSocPanelProps) {
+  const isPreview = incident.retention.mode === "preview";
+
   return (
     <>
       <div
@@ -52,7 +54,7 @@ export default function IncidentSocPanel({
         }}
       >
         <div>
-          <strong>Incident ID</strong>
+          <strong>{isPreview ? "Evidence Preview ID" : "Incident ID"}</strong>
           <div>{incident.incident_id}</div>
         </div>
 
@@ -62,29 +64,44 @@ export default function IncidentSocPanel({
         </div>
 
         <div>
-          <strong>Priority</strong>
+          <strong>{isPreview ? "Suggested priority" : "Priority"}</strong>
           <div>{incident.priority}</div>
         </div>
 
-        <div>
-          <strong>Lifecycle</strong>
-          <div>{displayValue(incident.lifecycle.state)}</div>
-        </div>
+        {isPreview ? (
+          <>
+            <div>
+              <strong>Confidence</strong>
+              <div>{displayValue(incident.risk.confidence)}</div>
+            </div>
+            <div>
+              <strong>Mode</strong>
+              <div>PUBLIC PREVIEW</div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div>
+              <strong>Lifecycle</strong>
+              <div>{displayValue(incident.lifecycle.state)}</div>
+            </div>
 
-        <div>
-          <strong>Status</strong>
-          <div>{displayValue(incident.status)}</div>
-        </div>
+            <div>
+              <strong>Status</strong>
+              <div>{displayValue(incident.status)}</div>
+            </div>
 
-        <div>
-          <strong>SOC Queue</strong>
-          <div>{incident.ownership.queue}</div>
-        </div>
+            <div>
+              <strong>SOC Queue</strong>
+              <div>{incident.ownership.queue}</div>
+            </div>
 
-        <div>
-          <strong>Assigned analyst</strong>
-          <div>{incident.ownership.assigned_to ?? "UNASSIGNED"}</div>
-        </div>
+            <div>
+              <strong>Assigned analyst</strong>
+              <div>{incident.ownership.assigned_to ?? "UNASSIGNED"}</div>
+            </div>
+          </>
+        )}
 
         <div>
           <strong>Risk score</strong>
@@ -138,8 +155,9 @@ export default function IncidentSocPanel({
           fontSize: "13px",
         }}
       >
-        Evidence export preserves the analyzed message SHA-256,
-        findings, risk assessment and security controls.
+        {isPreview
+          ? "This preview preserves the reported message SHA-256, findings, risk assessment and security controls. It is not a registered SOC incident or an independently verified forensic certificate."
+          : "Evidence export preserves the analyzed message SHA-256, findings, risk assessment and security controls."}
       </p>
     </>
   );

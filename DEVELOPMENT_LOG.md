@@ -157,3 +157,73 @@ P1 production deployment and regression validation complete.
 
 ### Status
 Post-submission scoring v1.2 validated in an isolated deployment.
+
+
+## 2026-11-27 - Public release 0.4.0-rc.1
+
+### Post-submission development milestones
+
+- P2: regression and judicial-phishing hardening.
+- P3: corporate multi-email campaign correlation.
+- P4: persistent incident management and audit history.
+- P5: SOC operations console and incident workflow.
+
+### Release preparation
+
+- Dedicated release/public-demo branch established.
+- Original TLN submission preserved on main.
+- Railway backend recovered using a Docker-based build.
+- Runtime and development dependencies pinned.
+- Python base image pinned by digest.
+- Public SOC operations disabled by default.
+- Non-persistent evidence preview separated from
+  persistent incident registration.
+- Public request size, rate and concurrency controls added.
+- Explicit CORS origins configured.
+- Three synthetic demonstration fixtures preserved.
+
+### Public interface hardening
+
+- Individual email risk distinguished from combined risk.
+- Technical graph connections represent associations,
+  not attack direction or attribution.
+- Response roles presented as recommendations only.
+- Public evidence preview clearly distinguished from
+  registered SOC incidents.
+
+### Validation
+
+- 166 automated backend tests passed.
+- Frontend lint and production build passed.
+- 29 remote controls passed during pre-release validation.
+- Six final functional production checks confirmed.
+- Three fixtures and three JSON exports preserved with
+  SHA-256 verification.
+- Production frontend returned HTTP 200.
+- Backend health returned status ok.
+- Production CORS preflight returned HTTP 200.
+- Public SOC access returned HTTP 503.
+
+### Published source checkpoints
+
+Frontend:
+
+    5c4b21a261fa876b544983db1c71b020626d7b35
+
+Backend:
+
+    1a1e6034d74cb508afba78018ac1929c2dfcc2c6
+
+Original TLN submission:
+
+    2b5f7ec8eee3f8372f788aa397fcadd373afe745
+
+### Release status
+
+Public demonstration published and functionally validated.
+
+Institutional SOC deployment remains a separate,
+protected evaluation milestone.
+
+See docs/PUBLIC_RELEASE_0.4.0-rc.1.md for release
+scope, evidence references and known limitations.

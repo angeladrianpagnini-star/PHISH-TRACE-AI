@@ -260,14 +260,58 @@ app = FastAPI(
 
 app.add_middleware(PublicResourceGuard)
 
+DEFAULT_CORS_ORIGINS = (
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "https://phish-trace-ai-psi.vercel.app",
+)
+
+
+def get_cors_allowed_origins(
+    configured: str | None = None,
+) -> list[str]:
+    if configured is None:
+        configured = os.getenv("CORS_ALLOWED_ORIGINS", "")
+
+    origins = list(DEFAULT_CORS_ORIGINS)
+
+    for entry in configured.split(","):
+        origin = entry.strip()
+
+        if not origin:
+            continue
+
+        if not re.fullmatch(
+            r"https://[a-zA-Z0-9.-]+(?::[0-9]{1,5})?",
+            origin,
+        ):
+            raise ValueError("Invalid CORS_ALLOWED_ORIGINS entry.")
+
+        parsed = urlparse(origin)
+
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError("Invalid CORS_ALLOWED_ORIGINS entry.")
+
+        if parsed.port is not None and not 1 <= parsed.port <= 65535:
+            raise ValueError("Invalid CORS origin port.")
+
+        if origin not in origins:
+            origins.append(origin)
+
+    return origins
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "https://phish-trace-ai-psi.vercel.app",
-    ],
-    allow_origin_regex=r"^https://phish-trace-ai(?:-[a-z0-9-]+)?\.vercel\.app$",
+    allow_origins=get_cors_allowed_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

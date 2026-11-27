@@ -1,4 +1,10 @@
 import hashlib
+import os
+import asyncio
+import time
+from collections import OrderedDict
+from starlette.responses import JSONResponse
+
 import json
 import re
 import secrets
@@ -13,10 +19,18 @@ from email.utils import parseaddr
 from typing import Any, List
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 MAX_EML_SIZE = 10 * 1024 * 1024
+
+MAX_UPLOAD_REQUEST = 12 * 1024 * 1024
+MAX_JSON_REQUEST = 4 * 1024 * 1024
+MAX_CAMPAIGN_ANALYSES = 20
+PUBLIC_REQUESTS_PER_MINUTE = 30
+MAX_PUBLIC_CONCURRENT = 4
+MAX_RATE_TRACKED_CLIENTS = 4096
+
 URL_PATTERN = re.compile(r"https?://[^\s<>'\"]+", re.IGNORECASE)
 
 SHORTENER_DOMAINS = {
@@ -71,10 +85,180 @@ INSTITUTIONAL_CLAIM_TERMS = (
     "official court notice",
 )
 
+class PublicResourceGuard:
+    PUBLIC_PATHS = {
+        "/analyze",
+        "/correlate",
+        "/correlate/campaign",
+        "/evidence/preview",
+    }
+
+    def __init__(self, app):
+        self.app = app
+        self.clients = OrderedDict()
+        self.active_requests = 0
+
+    async def reject(self, scope, receive, send, status, detail):
+        headers = {"Cache-Control": "no-store"}
+
+        if status == 429:
+            headers["Retry-After"] = "60"
+
+        response = JSONResponse(
+            {"detail": detail},
+            status_code=status,
+            headers=headers,
+        )
+
+        await response(scope, receive, send)
+
+    async def __call__(self, scope, receive, send):
+        if (
+            scope["type"] != "http"
+            or scope.get("method") != "POST"
+            or scope.get("path", "").rstrip("/")
+            not in self.PUBLIC_PATHS
+        ):
+            await self.app(scope, receive, send)
+            return
+
+        path = scope["path"].rstrip("/")
+
+        limit = (
+            MAX_UPLOAD_REQUEST
+            if path == "/analyze"
+            else MAX_JSON_REQUEST
+        )
+
+        headers = dict(scope.get("headers", []))
+        declared_size = headers.get(b"content-length")
+
+        if declared_size is not None:
+            try:
+                declared_size = int(declared_size)
+                if declared_size < 0:
+                    raise ValueError
+            except ValueError:
+                await self.reject(
+                    scope, receive, send, 400,
+                    "Invalid Content-Length.",
+                )
+                return
+
+            if declared_size > limit:
+                await self.reject(
+                    scope, receive, send, 413,
+                    "Request exceeds the public size limit.",
+                )
+                return
+
+        now = time.monotonic()
+        client = scope.get("client")
+        client_ip = client[0] if client else "unknown"
+
+        while self.clients:
+            oldest = next(iter(self.clients))
+            if now - self.clients[oldest][0] < 60:
+                break
+            self.clients.popitem(last=False)
+
+        started, count = self.clients.get(
+            client_ip, (now, 0)
+        )
+
+        if now - started >= 60:
+            started, count = now, 0
+
+        if count >= PUBLIC_REQUESTS_PER_MINUTE:
+            await self.reject(
+                scope, receive, send, 429,
+                "Public request rate limit exceeded.",
+            )
+            return
+
+        if (
+            client_ip not in self.clients
+            and len(self.clients) >= MAX_RATE_TRACKED_CLIENTS
+        ):
+            await self.reject(
+                scope, receive, send, 429,
+                "Public service capacity reached.",
+            )
+            return
+
+        self.clients[client_ip] = (started, count + 1)
+
+        if self.active_requests >= MAX_PUBLIC_CONCURRENT:
+            await self.reject(
+                scope, receive, send, 429,
+                "Public processing capacity reached.",
+            )
+            return
+
+        self.active_requests += 1
+
+        try:
+            body = bytearray()
+
+            try:
+                async with asyncio.timeout(30):
+                    while True:
+                        message = await receive()
+
+                        if message["type"] == "http.disconnect":
+                            return
+
+                        chunk = message.get("body", b"")
+
+                        if len(body) + len(chunk) > limit:
+                            await self.reject(
+                                scope, receive, send, 413,
+                                "Request exceeds the public size limit.",
+                            )
+                            return
+
+                        body.extend(chunk)
+
+                        if not message.get("more_body", False):
+                            break
+
+            except TimeoutError:
+                await self.reject(
+                    scope, receive, send, 408,
+                    "Request upload timed out.",
+                )
+                return
+
+            request_body = bytes(body)
+            del body
+
+            delivered = False
+
+            async def replay():
+                nonlocal delivered
+
+                if not delivered:
+                    delivered = True
+                    return {
+                        "type": "http.request",
+                        "body": request_body,
+                        "more_body": False,
+                    }
+
+                return await receive()
+
+            await self.app(scope, replay, send)
+
+        finally:
+            self.active_requests -= 1
+
+
 app = FastAPI(
     title="PHISH-TRACE AI API",
-    version="0.3.0"
+    version="0.4.0-rc.1"
 )
+
+app.add_middleware(PublicResourceGuard)
 
 app.add_middleware(
     CORSMiddleware,
@@ -90,11 +274,41 @@ app.add_middleware(
 )
 
 
+def require_soc_access(
+    x_soc_api_key: str | None = Header(default=None),
+) -> None:
+    configured_key = os.getenv("SOC_API_KEY", "")
+
+    if not configured_key or len(configured_key) < 32:
+        raise HTTPException(
+            status_code=503,
+            detail="SOC operations are disabled.",
+        )
+
+    if not x_soc_api_key or not secrets.compare_digest(
+        x_soc_api_key.encode("utf-8"),
+        configured_key.encode("utf-8"),
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="SOC authorization required.",
+        )
+
+
 @app.get("/health")
 def health():
     return {
         "status": "ok",
-        "service": "PHISH-TRACE AI API"
+        "service": "PHISH-TRACE AI API",
+        "version": app.version,
+        "release_channel": "public-demo",
+        "build_commit": os.getenv(
+            "RAILWAY_GIT_COMMIT_SHA",
+            os.getenv("BUILD_COMMIT", "local"),
+        ),
+        "soc_enabled": len(
+            os.getenv("SOC_API_KEY", "")
+        ) >= 32,
     }
 
 
@@ -913,6 +1127,12 @@ async def correlate_campaign(payload: dict[str, Any]):
             detail="At least two analyses are required.",
         )
 
+    if len(analyses) > MAX_CAMPAIGN_ANALYSES:
+        raise HTTPException(
+            status_code=413,
+            detail="A campaign supports up to 20 analyses.",
+        )
+
     if not all(isinstance(item, dict) for item in analyses):
         raise HTTPException(
             status_code=400,
@@ -1363,10 +1583,42 @@ def build_incident(analysis: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+@app.post("/evidence/preview")
+async def preview_evidence(analysis: dict[str, Any]):
+    risk = analysis.get("risk")
+    sha256 = analysis.get("sha256")
+
+    if not isinstance(risk, dict):
+        raise HTTPException(
+            status_code=400,
+            detail="Valid analysis risk data is required.",
+        )
+
+    if not isinstance(sha256, str) or not re.fullmatch(
+        r"[a-fA-F0-9]{64}", sha256
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Valid evidence SHA-256 is required.",
+        )
+
+    incident = build_incident(analysis)
+
+    incident["retention"] = {
+        "mode": "preview",
+        "persisted": False,
+    }
+
+    incident["evidence_origin"] = "CLIENT_SUPPLIED_ANALYSIS"
+    incident["integrity_verified"] = False
+
+    return incident
+
+
 incident_repository = IncidentRepository()
 
 
-@app.post("/incidents")
+@app.post("/incidents", dependencies=[Depends(require_soc_access)])
 async def create_incident(analysis: dict[str, Any]):
     incident = build_incident(analysis)
 
@@ -1397,7 +1649,7 @@ async def create_incident(analysis: dict[str, Any]):
     return incident
 
 
-@app.get("/incidents")
+@app.get("/incidents", dependencies=[Depends(require_soc_access)])
 async def list_incidents():
     try:
         return incident_repository.list()
@@ -1408,7 +1660,7 @@ async def list_incidents():
         ) from exc
 
 
-@app.get("/incidents/{incident_id}")
+@app.get("/incidents/{incident_id}", dependencies=[Depends(require_soc_access)])
 async def get_incident(incident_id: str):
     try:
         incident = incident_repository.get(incident_id)
@@ -1427,7 +1679,7 @@ async def get_incident(incident_id: str):
     return incident
 
 
-@app.get("/incidents/{incident_id}/events")
+@app.get("/incidents/{incident_id}/events", dependencies=[Depends(require_soc_access)])
 async def get_incident_audit_events(
     incident_id: str,
 ):
@@ -1456,7 +1708,7 @@ async def get_incident_audit_events(
         ) from exc
 
 
-@app.patch("/incidents/{incident_id}/assignment")
+@app.patch("/incidents/{incident_id}/assignment", dependencies=[Depends(require_soc_access)])
 async def update_incident_assignment(
     incident_id: str,
     payload: dict[str, Any],
@@ -1532,7 +1784,7 @@ async def update_incident_assignment(
     return updated_incident
 
 
-@app.patch("/incidents/{incident_id}/state")
+@app.patch("/incidents/{incident_id}/state", dependencies=[Depends(require_soc_access)])
 async def update_incident_state(
     incident_id: str,
     payload: dict[str, Any],

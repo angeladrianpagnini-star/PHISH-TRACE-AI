@@ -1,18 +1,20 @@
-﻿"use client";
+"use client";
 
 import { ChangeEvent, useEffect, useState } from "react";
 import ThreatGraph from "../components/ThreatGraph";
 import RemediationActors from "../components/RemediationActors";
 import IncidentSocPanel, { IncidentSocRecord } from "../components/IncidentSocPanel";
-import IncidentSocActions from "../components/IncidentSocActions";
-import IncidentAuditTimeline, {
-  IncidentAuditEvent,
-} from "../components/IncidentAuditTimeline";
-import IncidentRegistry from "../components/IncidentRegistry";
+
+
+
 
 type HealthResponse = {
   status: string;
   service: string;
+  version?: string;
+  build_commit?: string;
+  release_channel?: string;
+  soc_enabled?: boolean;
 };
 
 type IncidentResult = IncidentSocRecord & {
@@ -106,17 +108,10 @@ function displayLabel(value: string) {
 }
 export default function Home() {
   const [apiStatus, setApiStatus] = useState("Checking...");
+  const [apiVersion, setApiVersion] = useState("Unknown");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [incident, setIncident] = useState<IncidentResult | null>(null);
-  const [incidents, setIncidents] =
-    useState<IncidentResult[]>([]);
-  const [loadingIncidents, setLoadingIncidents] = useState(false);
-  const [updatingIncident, setUpdatingIncident] = useState(false);
-  const [incidentEvents, setIncidentEvents] =
-    useState<IncidentAuditEvent[]>([]);
-  const [loadingIncidentEvents, setLoadingIncidentEvents] =
-    useState(false);
   const [correlationBaseline, setCorrelationBaseline] =
     useState<AnalysisResult | null>(null);
   const [correlation, setCorrelation] =
@@ -143,6 +138,7 @@ export default function Home() {
       })
       .then((data: HealthResponse) => {
         setApiStatus(data.status === "ok" ? "ONLINE" : "DEGRADED");
+        setApiVersion(data.version || "Unknown");
       })
       .catch(() => {
         setApiStatus("OFFLINE");
@@ -332,172 +328,9 @@ export default function Home() {
     }
   }
 
-  async function loadIncidents() {
-    setLoadingIncidents(true);
-    setError("");
-
-    try {
-      const response = await fetch(`${apiBase}/incidents`);
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          payload.detail || "Incident registry retrieval failed."
-        );
-      }
-
-      setIncidents(payload);
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Unexpected incident registry error."
-      );
-    } finally {
-      setLoadingIncidents(false);
-    }
-  }
-
-  async function loadIncidentEvents(
-    incidentId: string
-  ) {
-    setLoadingIncidentEvents(true);
-    setError("");
-
-    try {
-      const response = await fetch(
-        `${apiBase}/incidents/${incidentId}/events`
-      );
-
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          payload.detail ||
-            "Incident audit timeline retrieval failed."
-        );
-      }
-
-      if (!Array.isArray(payload)) {
-        throw new Error(
-          "Incident audit timeline returned an invalid response."
-        );
-      }
-
-      setIncidentEvents(payload);
-    } catch (err) {
-      setIncidentEvents([]);
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Unexpected incident audit timeline error."
-      );
-    } finally {
-      setLoadingIncidentEvents(false);
-    }
-  }
-
-  function syncIncident(updatedIncident: IncidentResult) {
-    setIncident(updatedIncident);
-
-    setIncidents((currentIncidents) =>
-      currentIncidents.map((currentIncident) =>
-        currentIncident.incident_id === updatedIncident.incident_id
-          ? updatedIncident
-          : currentIncident
-      )
-    );
-  }
-
-  async function assignIncident(
-    assignedTo: string | null
-  ) {
-    if (!incident) return;
-
-    setUpdatingIncident(true);
-    setError("");
-
-    try {
-      const response = await fetch(
-        `${apiBase}/incidents/${incident.incident_id}/assignment`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            assigned_to: assignedTo,
-          }),
-        }
-      );
-
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          payload.detail || "Incident assignment failed."
-        );
-      }
-
-      syncIncident(payload);
-      await loadIncidentEvents(payload.incident_id);
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Unexpected incident assignment error."
-      );
-    } finally {
-      setUpdatingIncident(false);
-    }
-  }
-
-  async function transitionIncident(
-    targetState: string
-  ) {
-    if (!incident) return;
-
-    setUpdatingIncident(true);
-    setError("");
-
-    try {
-      const response = await fetch(
-        `${apiBase}/incidents/${incident.incident_id}/state`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            state: targetState,
-          }),
-        }
-      );
-
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          payload.detail || "Incident state transition failed."
-        );
-      }
-
-      syncIncident(payload);
-      await loadIncidentEvents(payload.incident_id);
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Unexpected incident state error."
-      );
-    } finally {
-      setUpdatingIncident(false);
-    }
-  }
-
   async function createIncident() {
     if (!analysis) {
-      setError("Analyze an email before creating an incident.");
+      setError("Analyze an email before generating evidence.");
       return;
     }
 
@@ -505,7 +338,7 @@ export default function Home() {
     setError("");
 
     try {
-      const response = await fetch(`${apiBase}/incidents`, {
+      const response = await fetch(`${apiBase}/evidence/preview`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -516,15 +349,14 @@ export default function Home() {
       const payload = await response.json();
 
       if (!response.ok) {
-        throw new Error(payload.detail || "Incident creation failed.");
+        throw new Error(payload.detail || "Evidence generation failed.");
       }
 
       setIncident(payload);
-      await loadIncidents();
-      await loadIncidentEvents(payload.incident_id);
+
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Unexpected incident error."
+        err instanceof Error ? err.message : "Unexpected evidence error."
       );
     } finally {
       setCreatingIncident(false);
@@ -562,21 +394,7 @@ export default function Home() {
       }}
     >
       <div style={{ maxWidth: "1050px", margin: "0 auto" }}>
-        <IncidentRegistry
-          incidents={incidents}
-          selectedIncidentId={incident?.incident_id ?? null}
-          loading={loadingIncidents}
-          onSelect={(selectedIncident) => {
-            setIncident(selectedIncident);
-            setAnalysis(selectedIncident.evidence);
-            setIncidentEvents([]);
-            setError("");
-            void loadIncidentEvents(
-              selectedIncident.incident_id
-            );
-          }}
-          onRefresh={loadIncidents}
-        />
+
         <p
           style={{
             color: "#22d3ee",
@@ -584,7 +402,7 @@ export default function Home() {
             letterSpacing: "0.16em",
           }}
         >
-          POST-SUBMISSION PREVIEW · SCORING v1.2
+          PUBLIC DEMO | RELEASE 0.4.0-rc.1 | SCORING v1.2
         </p>
 
         <h1 style={{ fontSize: "60px", margin: "18px 0 8px" }}>
@@ -610,11 +428,23 @@ export default function Home() {
             background: "#0f1c2e",
           }}
         >
+          <p style={{
+            color: apiStatus === "ONLINE" ? "#4ade80" : "#fbbf24",
+            fontSize: "13px",
+            fontWeight: 700,
+          }}>
+            API: {apiStatus} | Backend: {apiVersion}
+          </p>
+
           <h3>Secure Email Analysis</h3>
 
           <p style={{ color: "#94a3b8", lineHeight: 1.6 }}>
             Upload a suspicious .eml file for passive technical analysis.
             Active content, attachments and URLs are never executed.
+            Files are processed by the remote API.
+            Use synthetic or anonymized messages for this public demo.
+            Do not upload confidential or personal information.
+            Maximum .eml file size: 10 MiB.
           </p>
 
           <input
@@ -1307,7 +1137,7 @@ export default function Home() {
                   letterSpacing: "0.12em",
                 }}
               >
-                INCIDENT & EVIDENCE
+                EVIDENCE PREVIEW & EXPORT
               </p>
 
               {!incident ? (
@@ -1319,8 +1149,8 @@ export default function Home() {
                       marginTop: "16px",
                     }}
                   >
-                    Preserve this analysis as an explicit incident record.
-                    Analysis alone does not retain evidence.
+                    Generate a downloadable evidence preview.
+                    No record is saved to the shared SOC registry.
                   </p>
 
                   <button
@@ -1336,8 +1166,8 @@ export default function Home() {
                     }}
                   >
                     {creatingIncident
-                      ? "CREATING INCIDENT..."
-                      : "CREATE INCIDENT"}
+                      ? "GENERATING EVIDENCE..."
+                      : "GENERATE EVIDENCE"}
                   </button>
                 </>
               ) : (
@@ -1347,23 +1177,20 @@ export default function Home() {
                     onExport={exportIncidentJson}
                   />
 
-                  <IncidentSocActions
-                    key={`${incident.incident_id}:${incident.updated_at}`}
-                    incident={incident}
-                    busy={updatingIncident}
-                    onAssign={assignIncident}
-                    onTransition={transitionIncident}
-                  />
+                  <p style={{
+                    color: "#fbbf24",
+                    fontSize: "13px",
+                    lineHeight: 1.6,
+                  }}>
+                    Preview only. Client-supplied analysis.
+                    Integrity is not independently verified.
+                    This export is not a digitally signed
+                    forensic certificate.
+                  </p>
 
-                  <IncidentAuditTimeline
-                    events={incidentEvents}
-                    loading={loadingIncidentEvents}
-                    onRefresh={() =>
-                      loadIncidentEvents(
-                        incident.incident_id
-                      )
-                    }
-                  />
+
+
+
                 </>
               )}
             </div>

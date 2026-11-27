@@ -374,7 +374,7 @@ export default function Home() {
     const anchor = document.createElement("a");
 
     anchor.href = url;
-    anchor.download = `${incident.incident_id}.json`;
+    anchor.download = `PREVIEW-${incident.incident_id}.json`;
 
     document.body.appendChild(anchor);
     anchor.click();
@@ -699,7 +699,7 @@ export default function Home() {
                           fontSize: "12px",
                         }}
                       >
-                        STANDALONE RISK
+                        CURRENT EMAIL RISK
                       </p>
 
                       <strong style={{ fontSize: "28px" }}>
@@ -716,14 +716,17 @@ export default function Home() {
                           fontSize: "12px",
                         }}
                       >
-                        CONTEXTUAL RISK
+                        COMBINED COMPARISON RISK
                       </p>
 
                       <strong
                         style={{
                           fontSize: "28px",
                           color:
-                            correlation.correlated_risk.classification ===
+                            correlation.relationship ===
+                            "NO_TECHNICAL_RELATIONSHIP"
+                              ? "#94a3b8"
+                              : correlation.correlated_risk.classification ===
                             "CRITICAL"
                               ? "#f87171"
                               : correlation.correlated_risk.classification ===
@@ -740,6 +743,20 @@ export default function Home() {
                       </strong>
                     </div>
                   </div>
+
+                  <p
+                    style={{
+                      marginTop: "16px",
+                      color: "#94a3b8",
+                      fontSize: "14px",
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    {correlation.relationship ===
+                    "NO_TECHNICAL_RELATIONSHIP"
+                      ? "No shared technical indicators were detected. The combined risk does not reclassify the current email."
+                      : "Combined risk reflects both emails and their technical correlation. It does not replace the individual email assessment."}
+                  </p>
 
                   <div style={{ marginTop: "22px", lineHeight: 1.8 }}>
                     <p>
@@ -1137,7 +1154,7 @@ export default function Home() {
                   letterSpacing: "0.12em",
                 }}
               >
-                EVIDENCE PREVIEW & EXPORT
+                TECHNICAL EVIDENCE PREVIEW
               </p>
 
               {!incident ? (
@@ -1149,8 +1166,8 @@ export default function Home() {
                       marginTop: "16px",
                     }}
                   >
-                    Generate a downloadable evidence preview.
-                    No record is saved to the shared SOC registry.
+                    Generate a downloadable preview of the current email analysis.
+                    This public preview does not create a registered SOC incident.
                   </p>
 
                   <button
@@ -1166,8 +1183,8 @@ export default function Home() {
                     }}
                   >
                     {creatingIncident
-                      ? "GENERATING EVIDENCE..."
-                      : "GENERATE EVIDENCE"}
+                      ? "GENERATING PREVIEW..."
+                      : "GENERATE EVIDENCE PREVIEW"}
                   </button>
                 </>
               ) : (
@@ -1187,6 +1204,27 @@ export default function Home() {
                     This export is not a digitally signed
                     forensic certificate.
                   </p>
+
+                  <div
+                    style={{
+                      marginTop: "20px",
+                      padding: "16px",
+                      border: "1px solid #475569",
+                      borderRadius: "8px",
+                      background: "#111827",
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    <strong style={{ color: "#c4b5fd" }}>
+                      INSTITUTIONAL SOC
+                    </strong>
+                    <p style={{ color: "#94a3b8", fontSize: "13px" }}>
+                      Protected evaluation access is not enabled in this
+                      public demo. Incident registration, analyst assignment,
+                      lifecycle management and audit history belong to the
+                      institutional SOC environment.
+                    </p>
+                  </div>
 
 
 

@@ -9,17 +9,17 @@ const actors = [
   {
     name: "SOC / Security Operations",
     role: "Triage, containment and technical indicator handling.",
-    action: "ACKNOWLEDGE",
+    action: "RECOMMENDED: TRIAGE",
   },
   {
     name: "Email / Identity Administrator",
     role: "Account protection, mailbox review and identity remediation.",
-    action: "REMEDIATE",
+    action: "RECOMMENDED: REMEDIATE",
   },
   {
     name: "Incident Response / Evidence Custodian",
     role: "Preserve evidence and maintain the incident record.",
-    action: "PRESERVE",
+    action: "RECOMMENDED: PRESERVE",
   },
 ];
 
@@ -44,7 +44,7 @@ export default function RemediationActors({
           letterSpacing: "1px",
         }}
       >
-        RELEVANT REMEDIATION ACTORS
+        RECOMMENDED RESPONSE ROLES
       </h3>
 
       <p
@@ -55,9 +55,9 @@ export default function RemediationActors({
           lineHeight: 1.6,
         }}
       >
-        Suggested operational roles based on the technical findings. These are
-        response recommendations, not automatic actions or legal
-        determinations.
+        Suggested operational roles based on the technical findings. The labels
+        below describe recommended actions only. No action is executed or
+        recorded by this public demo.
       </p>
 
       <div
@@ -103,10 +103,10 @@ export default function RemediationActors({
               style={{
                 marginTop: "12px",
                 display: "inline-block",
-                border: "1px solid #22d3ee",
+                border: "1px solid #334155",
                 borderRadius: "6px",
                 padding: "7px 10px",
-                color: "#67e8f9",
+                color: "#94a3b8",
                 fontSize: "11px",
                 fontWeight: 700,
                 letterSpacing: "0.8px",
@@ -139,7 +139,7 @@ export default function RemediationActors({
             </strong>
           </>
         )}
-        . Actions remain human-controlled and simulated in this MVP.
+        . Recommendations only. No remediation action has been executed.
       </div>
     </section>
   );

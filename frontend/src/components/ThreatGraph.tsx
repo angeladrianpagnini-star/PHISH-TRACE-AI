@@ -4,7 +4,7 @@ import {
   Background,
   Controls,
   Edge,
-  MarkerType,
+  Position,
   Node,
   ReactFlow,
 } from "@xyflow/react";
@@ -32,6 +32,8 @@ export default function ThreatGraph({
 }: ThreatGraphProps) {
   const indicatorNodes: Node[] = sharedIndicators.map((indicator, index) => ({
     id: `indicator-${index}`,
+    sourcePosition: Position.Right,
+    targetPosition: Position.Left,
     position: {
       x: 310,
       y: 35 + index * 115,
@@ -68,7 +70,8 @@ export default function ThreatGraph({
   const nodes: Node[] = [
     {
       id: "baseline",
-      position: { x: 20, y: 135 },
+      sourcePosition: Position.Right,
+      position: { x: 20, y: 35 + (sharedIndicators.length - 1) * 57.5 },
       data: {
         label: (
           <div style={{ textAlign: "center" }}>
@@ -98,7 +101,8 @@ export default function ThreatGraph({
     ...indicatorNodes,
     {
       id: "current",
-      position: { x: 650, y: 135 },
+      targetPosition: Position.Left,
+      position: { x: 650, y: 35 + (sharedIndicators.length - 1) * 57.5 },
       data: {
         label: (
           <div style={{ textAlign: "center" }}>
@@ -119,10 +123,10 @@ export default function ThreatGraph({
       style: {
         width: 190,
         padding: "14px",
-        border: "1px solid #ef4444",
+        border: "1px solid #22d3ee",
         borderRadius: "8px",
-        background: "#241014",
-        color: "#fff1f2",
+        background: "#0d1b24",
+        color: "#ecfeff",
       },
     },
   ];
@@ -132,18 +136,22 @@ export default function ThreatGraph({
       id: `baseline-indicator-${index}`,
       source: "baseline",
       target: `indicator-${index}`,
-      animated: true,
-      markerEnd: {
-        type: MarkerType.ArrowClosed,
+      type: "straight",
+      animated: false,
+      style: {
+        stroke: "#a78bfa",
+        strokeWidth: 1.8,
       },
     },
     {
       id: `indicator-current-${index}`,
       source: `indicator-${index}`,
       target: "current",
-      animated: true,
-      markerEnd: {
-        type: MarkerType.ArrowClosed,
+      type: "straight",
+      animated: false,
+      style: {
+        stroke: "#a78bfa",
+        strokeWidth: 1.8,
       },
     },
   ]);
@@ -163,7 +171,7 @@ export default function ThreatGraph({
       }}
     >
       <div style={{ marginBottom: "14px" }}>
-        <h3 style={{ margin: 0, color: "#c4b5fd" }}>THREAT GRAPH</h3>
+        <h3 style={{ margin: 0, color: "#c4b5fd" }}>TECHNICAL CORRELATION GRAPH</h3>
 
         <p
           style={{
@@ -172,10 +180,21 @@ export default function ThreatGraph({
             opacity: 0.72,
           }}
         >
-          Shared technical evidence between analyzed emails. Technical
-          correlation does not establish attacker identity or legal
-          attribution.
+          Shared technical indicators between analyzed emails.
+          Connections represent associations, not attack direction,
+          causality, attacker identity or legal attribution.
         </p>
+      </div>
+
+      <div
+        style={{
+          marginBottom: "12px",
+          color: "#c4b5fd",
+          fontSize: "12px",
+        }}
+      >
+        {sharedIndicators.length} shared technical indicators
+        {" | "}2 analyzed emails
       </div>
 
       <div
@@ -191,16 +210,24 @@ export default function ThreatGraph({
           nodes={nodes}
           edges={edges}
           fitView
+          fitViewOptions={{ padding: 0.18 }}
+          colorMode="dark"
           nodesDraggable={false}
           nodesConnectable={false}
           elementsSelectable={false}
           panOnDrag
           zoomOnScroll
-          minZoom={0.65}
+          minZoom={0.2}
           maxZoom={1.4}
         >
-          <Background gap={22} size={1} />
-          <Controls showInteractive={false} />
+          <Background gap={22} size={1} color="#332744" />
+          <Controls
+            showInteractive={false}
+            style={{
+              background: "#171326",
+              border: "1px solid #475569",
+            }}
+          />
         </ReactFlow>
       </div>
     </section>

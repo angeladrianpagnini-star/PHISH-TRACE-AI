@@ -59,7 +59,7 @@ export default function IncidentSocPanel({
         </div>
 
         <div>
-          <strong>Severity</strong>
+          <strong>{isPreview ? "Assessed severity" : "Severity"}</strong>
           <div>{displayValue(incident.severity)}</div>
         </div>
 
@@ -76,7 +76,7 @@ export default function IncidentSocPanel({
             </div>
             <div>
               <strong>Mode</strong>
-              <div>PUBLIC PREVIEW</div>
+              <div>PUBLIC DEMO - NON-PERSISTENT</div>
             </div>
           </>
         ) : (
@@ -104,7 +104,7 @@ export default function IncidentSocPanel({
         )}
 
         <div>
-          <strong>Risk score</strong>
+          <strong>{isPreview ? "Individual email risk" : "Risk score"}</strong>
           <div>
             {incident.risk.score} ·{" "}
             {displayValue(incident.risk.classification)}
@@ -145,7 +145,7 @@ export default function IncidentSocPanel({
           cursor: "pointer",
         }}
       >
-        EXPORT EVIDENCE JSON
+        {isPreview ? "EXPORT PREVIEW JSON" : "EXPORT EVIDENCE JSON"}
       </button>
 
       <p
